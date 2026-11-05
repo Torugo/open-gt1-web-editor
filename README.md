@@ -67,6 +67,47 @@ browser, where loading memories, editing and writing all work, and nothing reach
 
 Not rebuilt yet: system settings, tuner, CTL/EXP assign editor, copy/move between memories, online Tone Central.
 
+Tested on a real GT-1 with Chrome on Windows: connect, reading all memories, switching patches, live
+editing, writing to a memory, `.tsl` import and export.
+
+## Other BOSS devices (help wanted)
+
+Only the **GT-1** is supported. Other BOSS multi-effects are very likely possible, but nobody is
+working on them: this needs someone who owns the device. Contributions are welcome.
+
+**Why it looks feasible.** Most of this editor is not GT-1 specific: the Web MIDI / Roland SysEx
+transport, the patch model, `.tsl` files, the knob UI, the demo and the setup screen. BOSS also reused
+the same code across the family: the GT-1's BOSS TONE STUDIO still contains a GT-100 model ID, "quick
+setting" lists for the GT-100 and GT-001, and effect types the GT-1 does not have.
+
+**What a new device needs**
+
+1. **That device's own BOSS TONE STUDIO files.** Each model has its own memory layout, effect list
+   and chain, and the GT-1 files only hold fragments of the others. Like the GT-1, the data is read
+   from the user's own copy, so this repository stays free of Roland files.
+2. **The real unit to test with.** Several GT-1 bugs only showed up on hardware (the unit echoing
+   patch changes, assigns streaming ~30 updates a second); the simulated unit did not catch them.
+
+**Rough effort**
+
+| Device | Effort | Notes |
+|---|---|---|
+| GT-001 | Small | Desktop GT-1, same code family; the GT-1 app already references it |
+| GT-100 | Medium | Same family, more effects, two channels, own memory layout |
+| ME-80, ME-25 | Medium | Possibly the same platform; needs checking |
+| Katana, GT-1000 | Unknown | Newer editors, may be built differently; look at the files first |
+
+**Suggested path**
+
+1. Move everything GT-1 specific (block list, chain IDs, model ID, memory layout, which tables to
+   extract) into a *device profile*, with the GT-1 as the first one, and let the setup screen detect
+   which device's files it was given. No hardware needed; GT-1 behaviour must stay identical.
+2. For each new device: run the extraction on its BOSS TONE STUDIO (`tools/build_defs.py` and
+   `tools/disasm.py` show how the GT-1 tables were found), fill in its profile, then test every
+   operation on the real unit, the same list as above.
+
+If you own one of these units and want to try, open an issue first so the work can be shared.
+
 ## Layout
 
 | Path | What |
