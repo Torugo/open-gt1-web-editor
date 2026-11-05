@@ -33,9 +33,8 @@ Any of these serves the same static page on <http://localhost:8123>:
 
 | How | Command |
 |---|---|
-| Docker | `docker compose up -d` (stop with `docker compose down`) |
-| Windows | double-click `start.bat` (needs Python) |
-| macOS / Linux | `./start.sh` (needs Python 3) |
+| Docker (any OS) | `docker compose up -d` (stop with `docker compose down`) |
+| Without Docker, macOS / Linux | `./start.sh` (needs Python 3) |
 
 The page must be opened as `http://localhost…` or `https://…`: browsers only allow Web MIDI there.
 The Docker container only serves files; it needs no USB access, because the browser on your computer
@@ -81,13 +80,13 @@ Not rebuilt yet: system settings, tuner, CTL/EXP assign editor, copy/move betwee
 | `app/js/store.js` | Browser storage (IndexedDB) for the extracted data |
 | `tools/` | The same extraction in Python, for development |
 | `Dockerfile`, `compose.yaml`, `docker/` | nginx container serving `app/` |
-| `start.bat`, `start.sh` | Local launchers (Windows / macOS, Linux) |
+| `start.sh` | Launcher without Docker (macOS / Linux) |
 
 ## Local development
 
 ```
 python -I tools/build_defs.py path/to/installed-program   # writes app/data/ (git-ignored)
-./start.sh   # or start.bat — serves app/ on http://localhost:8123
+python -m http.server 8123 --bind 127.0.0.1 -d app      # serves app/ on http://localhost:8123
 ```
 
 When `app/data/` exists locally the setup screen is skipped. `app/data/` is never committed, and the
