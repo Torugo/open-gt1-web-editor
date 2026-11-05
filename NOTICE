@@ -1,0 +1,25 @@
+Open GT-1 Web Editor
+Copyright (C) 2026 Torugo and contributors
+
+This program is free software: you can redistribute it and/or modify it under the
+terms of the GNU Affero General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU Affero General Public License (LICENSE) for details.
+
+If you run a modified version of this editor as a website, the AGPL requires you to
+offer its source code to the people using it (section 13). The "Source" link in the
+page footer does this for the official site; keep an equivalent link in your copy.
+
+Third-party material
+--------------------
+This repository contains no Roland Corporation files. The GT-1 parameter tables and
+factory presets are read at run time from each user's own copy of BOSS TONE STUDIO
+for GT-1 and are stored only in that user's browser. That material remains the
+property of Roland Corporation and is not covered by this license.
+
+BOSS, GT-1 and BOSS TONE STUDIO are trademarks of Roland Corporation. This project is
+not affiliated with, endorsed by or sponsored by Roland Corporation; the names are
+used only to describe which device and files the editor works with.
