@@ -26,30 +26,29 @@ export const PRETTY = {
 export const pretty = (n) => PRETTY[n] || n;
 
 // chain: value stored in fx_chain_positionN (order taken from ChainParams.getEffectName)
-// color: effect family, from the palette in style.css (drive = greens, modulation = teal,
-// time/dynamics = mint, utility = blue)
+// color: effect family; the actual colors are theme variables (--f-*) in style.css
 export const BLOCKS = [
-  { id: 'comp', chain: 0, short: 'CMP', name: 'COMP', sw: 'comp_on_off', type: 'comp_type', types: 'COMP_TYPE', params: 'COMP_PARAMS_LIST', color: '#c7f9cc' },
-  { id: 'sr', chain: 1, short: 'S/R', name: 'SEND/RETURN', sw: 'send_return_on_off', params: 'SEND_RETURN_PARAMS_LIST', color: '#22577a' },
-  { id: 'preA', chain: 2, short: 'PrA', name: 'PREAMP A', sw: 'preamp_a_on_off', type: 'preamp_a_type', types: 'PREAMP_TYPE', params: 'PREAMP_A_PARAMS_LIST', sub: { CUSTOM: ['preamp_a_custom_type', 'PREAMP_SUB_TYPE_LIST'] }, color: '#57cc99' },
-  { id: 'preB', chain: 3, short: 'PrB', name: 'PREAMP B', sw: 'preamp_b_on_off', type: 'preamp_b_type', types: 'PREAMP_TYPE', params: 'PREAMP_A_PARAMS_LIST', rename: ['preamp_a_', 'preamp_b_'], sub: { CUSTOM: ['preamp_b_custom_type', 'PREAMP_SUB_TYPE_LIST'] }, color: '#57cc99' },
-  { id: 'eq', chain: 4, short: 'EQ', name: 'EQ', sw: 'eq_on_off', params: 'EQ_PARAMS_LIST', color: '#57cc99' },
-  { id: 'fx1', chain: 5, short: 'FX1', name: 'FX1', sw: 'fx1_on_off', type: 'fx1_fx_type', types: 'FX1_TYPE', params: 'FX1_PARAMS_LIST', sub: FX_SUB('fx1'), subLists: 'FX1_SUB_TYPE_LIST', color: '#38a3a5' },
-  { id: 'fx2', chain: 6, short: 'FX2', name: 'FX2', sw: 'fx2_on_off', type: 'fx2_fx_type', types: 'FX2_TYPE', params: 'FX2_PARAMS_LIST', sub: FX_SUB('fx2'), subLists: 'FX2_SUB_TYPE_LIST', color: '#38a3a5' },
-  { id: 'delay', chain: 7, short: 'DLY', name: 'DELAY', sw: 'delay_on_off', type: 'delay_type', types: 'DELAY_TYPE', params: 'DELAY_PARAMS_LIST', color: '#c7f9cc' },
-  { id: 'chorus', chain: 8, short: 'CHO', name: 'CHORUS', sw: 'chorus_on_off', type: 'chorus_mode', types: 'CHORUS_TYPE', params: 'CHORUS_PARAMS_LIST', color: '#38a3a5' },
-  { id: 'reverb', chain: 9, short: 'REV', name: 'REVERB', sw: 'reverb_on_off', type: 'reverb_type', types: 'REVERB_TYPE', params: 'REVERB_PARAMS_LIST', color: '#c7f9cc' },
-  { id: 'accel', chain: 10, short: 'ACC', name: 'ACCEL FX', type: 'accel_fx_type', types: 'ACCEL_FX_TYPE', params: 'ACCEL_FX_PARAMS_LIST', sub: { FEEDBACKER: ['accel_fx_feedbacker_mode', 'ACCEL_FX_SUB_TYPE_LIST'] }, color: '#38a3a5' },
-  { id: 'pedal', chain: 11, short: 'PDL', name: 'PEDAL FX', sw: 'pedal_fx_on_off', type: 'pedal_fx_wah_type', types: 'PEDAL_FX_TYPE', params: 'PEDAL_FX_PARAMS_LIST', color: '#80ed99' },
-  { id: 'fv', chain: 12, short: 'FV', name: 'FOOT VOLUME', params: 'FOOT_VOLUME_PARAMS_LIST', color: '#22577a' },
-  { id: 'ns1', chain: 13, short: 'NS', name: 'NS', sw: 'ns1_on_off', params: 'NS1_PARAMS_LIST', color: '#22577a' },
-  { id: 'ns2', chain: 14, short: 'NS2', name: 'NS2', sw: 'ns2_on_off', params: 'NS2_PARAMS_LIST', color: '#22577a' },
-  { id: 'odds', chain: 15, short: 'OD', name: 'OD/DS', sw: 'od_ds_on_off', type: 'od_ds_type', types: 'ODDS_TYPE', params: 'ODDS_PARAMS_LIST', sub: { CUSTOM: ['od_ds_custom_type', 'ODDS_SUB_TYPE_LIST'] }, color: '#80ed99' },
-  { id: 'usb', chain: 16, short: 'USB', name: 'USB OUT', fixed: true, color: '#22577a' },
-  { id: 'div', chain: 17, short: 'DIV', name: 'DIVIDER', params: 'DIVIDER_PARAMS_LIST', color: '#22577a' },
-  { id: 'mxdv', chain: 18, short: 'B', name: 'CH B', fixed: true, color: '#22577a' },
-  { id: 'mix', chain: 19, short: 'MIX', name: 'MIXER', params: 'MIXER_PARAMS_LIST', color: '#22577a' },
-  { id: 'master', chain: -1, short: 'MST', name: 'MASTER', params: 'MASTER_SETTING_PARAMS_LIST', color: '#22577a' },
+  { id: 'comp', chain: 0, short: 'CMP', name: 'COMP', sw: 'comp_on_off', type: 'comp_type', types: 'COMP_TYPE', params: 'COMP_PARAMS_LIST', color: 'var(--f-dyn)' },
+  { id: 'sr', chain: 1, short: 'S/R', name: 'SEND/RETURN', sw: 'send_return_on_off', params: 'SEND_RETURN_PARAMS_LIST', color: 'var(--f-util)' },
+  { id: 'preA', chain: 2, short: 'PrA', name: 'PREAMP A', sw: 'preamp_a_on_off', type: 'preamp_a_type', types: 'PREAMP_TYPE', params: 'PREAMP_A_PARAMS_LIST', sub: { CUSTOM: ['preamp_a_custom_type', 'PREAMP_SUB_TYPE_LIST'] }, color: 'var(--f-amp)' },
+  { id: 'preB', chain: 3, short: 'PrB', name: 'PREAMP B', sw: 'preamp_b_on_off', type: 'preamp_b_type', types: 'PREAMP_TYPE', params: 'PREAMP_A_PARAMS_LIST', rename: ['preamp_a_', 'preamp_b_'], sub: { CUSTOM: ['preamp_b_custom_type', 'PREAMP_SUB_TYPE_LIST'] }, color: 'var(--f-amp)' },
+  { id: 'eq', chain: 4, short: 'EQ', name: 'EQ', sw: 'eq_on_off', params: 'EQ_PARAMS_LIST', color: 'var(--f-amp)' },
+  { id: 'fx1', chain: 5, short: 'FX1', name: 'FX1', sw: 'fx1_on_off', type: 'fx1_fx_type', types: 'FX1_TYPE', params: 'FX1_PARAMS_LIST', sub: FX_SUB('fx1'), subLists: 'FX1_SUB_TYPE_LIST', color: 'var(--f-mod)' },
+  { id: 'fx2', chain: 6, short: 'FX2', name: 'FX2', sw: 'fx2_on_off', type: 'fx2_fx_type', types: 'FX2_TYPE', params: 'FX2_PARAMS_LIST', sub: FX_SUB('fx2'), subLists: 'FX2_SUB_TYPE_LIST', color: 'var(--f-mod)' },
+  { id: 'delay', chain: 7, short: 'DLY', name: 'DELAY', sw: 'delay_on_off', type: 'delay_type', types: 'DELAY_TYPE', params: 'DELAY_PARAMS_LIST', color: 'var(--f-time)' },
+  { id: 'chorus', chain: 8, short: 'CHO', name: 'CHORUS', sw: 'chorus_on_off', type: 'chorus_mode', types: 'CHORUS_TYPE', params: 'CHORUS_PARAMS_LIST', color: 'var(--f-mod)' },
+  { id: 'reverb', chain: 9, short: 'REV', name: 'REVERB', sw: 'reverb_on_off', type: 'reverb_type', types: 'REVERB_TYPE', params: 'REVERB_PARAMS_LIST', color: 'var(--f-time)' },
+  { id: 'accel', chain: 10, short: 'ACC', name: 'ACCEL FX', type: 'accel_fx_type', types: 'ACCEL_FX_TYPE', params: 'ACCEL_FX_PARAMS_LIST', sub: { FEEDBACKER: ['accel_fx_feedbacker_mode', 'ACCEL_FX_SUB_TYPE_LIST'] }, color: 'var(--f-mod)' },
+  { id: 'pedal', chain: 11, short: 'PDL', name: 'PEDAL FX', sw: 'pedal_fx_on_off', type: 'pedal_fx_wah_type', types: 'PEDAL_FX_TYPE', params: 'PEDAL_FX_PARAMS_LIST', color: 'var(--f-drive)' },
+  { id: 'fv', chain: 12, short: 'FV', name: 'FOOT VOLUME', params: 'FOOT_VOLUME_PARAMS_LIST', color: 'var(--f-util)' },
+  { id: 'ns1', chain: 13, short: 'NS', name: 'NS', sw: 'ns1_on_off', params: 'NS1_PARAMS_LIST', color: 'var(--f-dyn)' },
+  { id: 'ns2', chain: 14, short: 'NS2', name: 'NS2', sw: 'ns2_on_off', params: 'NS2_PARAMS_LIST', color: 'var(--f-dyn)' },
+  { id: 'odds', chain: 15, short: 'OD', name: 'OD/DS', sw: 'od_ds_on_off', type: 'od_ds_type', types: 'ODDS_TYPE', params: 'ODDS_PARAMS_LIST', sub: { CUSTOM: ['od_ds_custom_type', 'ODDS_SUB_TYPE_LIST'] }, color: 'var(--f-drive)' },
+  { id: 'usb', chain: 16, short: 'USB', name: 'USB OUT', fixed: true, color: 'var(--f-util)' },
+  { id: 'div', chain: 17, short: 'DIV', name: 'DIVIDER', params: 'DIVIDER_PARAMS_LIST', color: 'var(--f-util)' },
+  { id: 'mxdv', chain: 18, short: 'B', name: 'CH B', fixed: true, color: 'var(--f-util)' },
+  { id: 'mix', chain: 19, short: 'MIX', name: 'MIXER', params: 'MIXER_PARAMS_LIST', color: 'var(--f-util)' },
+  { id: 'master', chain: -1, short: 'MST', name: 'MASTER', params: 'MASTER_SETTING_PARAMS_LIST', color: 'var(--f-util)' },
 ];
 export const BLOCK_BY_CHAIN = Object.fromEntries(BLOCKS.filter((b) => b.chain >= 0).map((b) => [b.chain, b]));
 
