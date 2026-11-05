@@ -150,6 +150,10 @@ function flushSend() {
   sendQueue.clear();
 }
 
+// Controls currently on screen, by parameter id: how to show a new value without rebuilding.
+// Used for values the GT-1 streams back (expression pedal, assigns, wave modulation…).
+const liveControls = new Map();
+
 function control(def, block) {
   const p = state.patch;
   const raw = p.get(def.id);
@@ -171,13 +175,21 @@ function control(def, block) {
       if (i === st.stepperIndex) k.update(st.min);
     });
     widget = el('div', { class: 'stepdd' }, k, sel);
+    liveControls.set(def.id, (r) => {
+      const s = stepperSplit(st, r);
+      if (state.activeKnob !== k) k.update(s.numeric ? s.number : st.min);
+      if (document.activeElement !== sel) sel.value = s.numeric ? st.stepperIndex : st.dropdown.findIndex((o) => o.val === r);
+      valEl.textContent = labelOf(def, r);
+    });
   } else if (dd) {
     const maxRaw = fromDisplay(def, def.max);
     const sel = el('select', { 'aria-label': def.name, onchange: (e) => update(+e.target.value, { rerender: true }) },
       dd.slice(0, maxRaw + 1).map((name, i) => el('option', { value: i, selected: i === raw }, name)));
+    liveControls.set(def.id, (r) => { if (document.activeElement !== sel) sel.value = r; });
     return el('div', { class: 'ctrl' }, el('div', { class: 'name' }, def.name), sel);
   } else {
     widget = knob({ value: raw, min: fromDisplay(def, def.min), max: fromDisplay(def, def.max), label: def.name, onInput: (r) => update(r) });
+    liveControls.set(def.id, (r) => { if (state.activeKnob !== widget) widget.update(r); valEl.textContent = labelOf(def, r); });
   }
   return el('div', { class: 'ctrl' }, el('div', { class: 'name' }, def.name), widget, valEl);
 }
@@ -185,6 +197,7 @@ function control(def, block) {
 function renderPanel() {
   const panel = $('#panel');
   panel.replaceChildren();
+  liveControls.clear();
   const p = state.patch;
   const b = BLOCKS.find((x) => x.id === state.block);
   if (!p) { panel.append(el('div', { class: 'empty' }, 'Pick a patch on the left, or connect your GT-1.')); return; }
@@ -462,9 +475,41 @@ function onDeviceData(e) {
   if (start >= TEMP_START && start < TEMP_END && state.patch) {
     const image = new Map(state.patch.image);
     bytes.forEach((v, a) => image.set(a - TEMP_START, v));
+    const before = state.patch.values;
     state.patch = Patch.fromImage(image);
-    if (!state.activeKnob) render();
+    const changed = Object.keys(state.patch.values).filter((k) => state.patch.values[k] !== before[k]);
+    if (!changed.length) return;
+    // A pedal or assign sweeping a knob only moves that knob; anything that changes what is
+    // shown (type, on/off, chain, name) redraws the editor, at most a few times a second.
+    if (changed.some(isStructural)) scheduleRedraw();
+    else for (const k of changed) liveControls.get(k)?.(state.patch.get(k));
   }
+}
+
+// Keys whose change alters which blocks/controls are shown, not just a value.
+let structuralKeys = null;
+function isStructural(key) {
+  if (!structuralKeys) {
+    structuralKeys = new Set(['divider_mode', 'send_return_mode', 'preamp_a_sp_type', 'preamp_b_sp_type']);
+    for (const b of BLOCKS) {
+      if (b.sw) structuralKeys.add(b.sw);
+      if (b.type) structuralKeys.add(b.type);
+      for (const [param] of Object.values(b.sub || {})) structuralKeys.add(param);
+    }
+  }
+  return structuralKeys.has(key) || key.startsWith('fx_chain_position') || key.startsWith('patch_name') || /_harmonist_hr\dharm$/.test(key);
+}
+
+let redrawTimer = null;
+function scheduleRedraw() {
+  if (redrawTimer) return;
+  redrawTimer = setTimeout(() => {
+    redrawTimer = null;
+    if (state.activeKnob) { scheduleRedraw(); return; } // never pull a knob out from under the mouse
+    $('#patchName').value = state.patch.name;
+    renderChain();
+    renderPanel();
+  }, 250);
 }
 
 // ---------------------------------------------------------------- settings dialog
