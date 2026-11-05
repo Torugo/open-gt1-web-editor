@@ -1,9 +1,11 @@
-// Demo mode: a simulated GT-1 that lives in the browser, so the editor can be tried without the
+// Demo mode: a simulated unit that lives in the browser, so the editor can be tried without the
 // hardware. Its user memories are random variations of the factory presets, generated on the fly
 // from the data the user imported (nothing from Roland is stored in this project).
+// Device-neutral: memory map, commands and demo settings come from the active profile.
 import { addrToInt, intToAddr, checksum } from './midi.js';
-import { Patch, TEMP_BASE } from './model.js';
-import { BLOCKS, typeList, paramDefs, dropdownFor, stepperFor, fromDisplay } from './blocks.js';
+import { Patch } from './model.js';
+import { typeList, paramDefs, dropdownFor, stepperFor, fromDisplay } from './blocks.js';
+import { DEVICE } from './device.js';
 
 const ADJ = ['WARM', 'FAT', 'DARK', 'BRIGHT', 'WILD', 'SMOOTH', 'ANGRY', 'DREAMY', 'VINTAGE', 'MODERN', 'GLASSY', 'FUZZY', 'SPACEY', 'TIGHT', 'HOT', 'COSMIC', 'DUSTY', 'ROYAL', 'NEON', 'LOW'];
 const NOUN = ['LEAD', 'CRUNCH', 'CLEAN', 'RIFF', 'SOLO', 'STACK', 'DRIVE', 'WALL', 'ECHO', 'SWIRL', 'BLUES', 'METAL', 'FUNK', 'DRONE', 'TWANG', 'ROAR', 'HAZE', 'SHIMMER', 'JET', 'CHUG'];
@@ -23,10 +25,10 @@ function demoName(i) {
 export function randomPatch(factory, i) {
   const base = pick(factory);
   const p = Patch.fromTsl(base.params);
-  for (const b of BLOCKS) {
+  for (const b of DEVICE.blocks) {
     const types = typeList(b);
     if (types && Math.random() < 0.3) p.set(b.type, pick(types).val);
-    if (b.sw && ['fx1', 'fx2', 'delay', 'chorus', 'reverb', 'comp', 'eq'].includes(b.id) && Math.random() < 0.2) {
+    if (b.sw && DEVICE.demo.toggleBlocks.includes(b.id) && Math.random() < 0.2) {
       p.set(b.sw, p.get(b.sw) ? 0 : 1);
     }
     for (const d of paramDefs(b, p)) {
@@ -42,9 +44,6 @@ export function randomPatch(factory, i) {
 }
 
 // ---- patches made from scratch (demo without any imported data) ------------------------
-// Chain order used for scratch patches; divider -> ch B -> mixer must stay in that order.
-const DEMO_CHAIN = [0, 15, 5, 11, 17, 2, 13, 18, 3, 19, 4, 6, 8, 7, 9, 10, 12, 14, 1, 16];
-const ON_CHANCE = { preamp_a_on_off: 0.95, preamp_b_on_off: 0.3, od_ds_on_off: 0.6, ns1_on_off: 0.8, reverb_on_off: 0.75, delay_on_off: 0.6 };
 const CATEGORIES = ['ROCK', 'BLUES', 'METAL', 'CLEAN', 'AMBIENT', 'FUNK'];
 
 // Knob values lean toward the middle of their range (average of two dice), like real sounds do.
@@ -59,50 +58,55 @@ export function scratchPresets(count, paramDefs, switches, typeKeys, typeLists) 
       const lo = Math.round((d.min - base) / d.step); const hi = Math.round((d.max - base) / d.step);
       params[d.id] = hi - lo <= 4 ? randInt(lo, hi) : centred(lo, hi);
     }
-    switches.forEach((k) => { params[k] = Math.random() < (ON_CHANCE[k] ?? 0.4) ? 1 : 0; });
+    switches.forEach((k) => { params[k] = Math.random() < (DEVICE.demo.onChance[k] ?? 0.4) ? 1 : 0; });
     typeKeys.forEach((k) => { const list = typeLists[k]; params[k] = list ? pick(list).val : 0; });
-    DEMO_CHAIN.forEach((v, j) => { params[`fx_chain_position${j + 1}`] = v; });
+    DEVICE.demo.chain.forEach((v, j) => { params[DEVICE.patch.chainKeys[j]] = v; });
     const name = demoName(i).replace(/ \d+$/, '');
-    [...name.padEnd(16, ' ')].forEach((c, j) => { params[`patch_name${j + 1}`] = c.charCodeAt(0); });
+    const keys = DEVICE.patch.nameKeys;
+    [...name.padEnd(keys.length, ' ')].forEach((c, j) => { params[keys[j]] = c.charCodeAt(0); });
     out.push({ name, category: pick(CATEGORIES), params });
   }
   return out;
 }
 
 // ---- simulated device -----------------------------------------------------------
-// Behaves like the GT-1 on the SysEx level: identity reply, RQ1 answers, DT1 writes,
-// patch select (00 01 00 00) and patch write (7F 00 01 04).
-export function createVirtualGT1(factory) {
+// Behaves like the real unit on the SysEx level: identity reply, RQ1 answers, DT1 writes,
+// patch select and patch write (addresses from the device profile).
+export function createVirtualDevice(factory) {
+  const { memory, commands, modelId, name: devName } = DEVICE;
   const mem = new Map();
   const put = (base2, patch) => { const b = addrToInt([...base2, 0, 0]); for (const [o, v] of patch.image) mem.set(b + o, v); };
   const copy = (fromBase2, toBase2) => {
     const f = addrToInt([...fromBase2, 0, 0]); const t = addrToInt([...toBase2, 0, 0]);
-    for (let i = 0; i < 24 * 128; i++) if (mem.has(f + i)) mem.set(t + i, mem.get(f + i));
+    for (let i = 0; i < memory.patchSpan; i++) if (mem.has(f + i)) mem.set(t + i, mem.get(f + i));
   };
-  const userBase = (n) => [0x10 + (n >> 7), n & 127];
-  for (let n = 0; n < 99; n++) put(userBase(n), randomPatch(factory, n));
-  copy(userBase(0), TEMP_BASE);
-  mem.set(addrToInt([0, 1, 0, 0]), 0); mem.set(addrToInt([0, 1, 0, 1]), 0);
+  const TEMP = memory.temp;
+  const patchNo = addrToInt(memory.currentPatch);
+  for (let n = 0; n < memory.userCount; n++) put(memory.user(n), randomPatch(factory, n));
+  copy(memory.user(0), TEMP);
+  mem.set(patchNo, 0); mem.set(patchNo + 1, 0);
 
-  const input = { id: 'demo-in', name: 'Demo GT-1 (simulated)', onmidimessage: null };
+  const input = { id: 'demo-in', name: `Demo ${devName} (simulated)`, onmidimessage: null };
   // Answer asynchronously like real MIDI, but without timers (browsers throttle them in background tabs)
   const reply = (bytes) => queueMicrotask(() => input.onmidimessage && input.onmidimessage({ data: new Uint8Array(bytes) }));
-  const dt1 = (addr, data) => { const body = [...intToAddr(addr), ...data]; reply([0xf0, 0x41, 0x10, 0, 0, 0, 0x30, 0x12, ...body, checksum(body), 0xf7]); };
+  const dt1 = (addr, data) => { const body = [...intToAddr(addr), ...data]; reply([0xf0, 0x41, 0x10, ...modelId, 0x12, ...body, checksum(body), 0xf7]); };
 
   const output = {
-    id: 'demo-out', name: 'Demo GT-1 (simulated)',
+    id: 'demo-out', name: `Demo ${devName} (simulated)`,
     send(d) {
       d = [...d];
       if (d[1] === 0x7e && d[3] === 0x06 && d[4] === 0x01) { reply([0xf0, 0x7e, 0x10, 0x06, 0x02, 0x41, 0x30, 0x03, 0, 0, 0, 0, 0, 0, 0xf7]); return; }
       if (d[0] !== 0xf0 || d[1] !== 0x41) return;
-      const addr = addrToInt(d.slice(8, 12));
-      if (d[7] === 0x12) {
-        const data = d.slice(12, d.length - 2);
+      const cmdAt = 3 + modelId.length;
+      const addr = addrToInt(d.slice(cmdAt + 1, cmdAt + 5));
+      if (d[cmdAt] === 0x12) {
+        const data = d.slice(cmdAt + 5, d.length - 2);
         data.forEach((b, i) => mem.set(addr + i, b));
-        if (addr === addrToInt([0, 1, 0, 0])) copy(userBase(data[0] * 128 + data[1]), TEMP_BASE); // select patch
-        if (addr === addrToInt([0x7f, 0, 1, 4])) copy(TEMP_BASE, userBase(data[0] * 128 + data[1])); // write patch
-      } else if (d[7] === 0x11) {
-        const size = addrToInt(d.slice(12, 16));
+        const n = data[0] * 128 + (data[1] ?? 0);
+        if (addr === patchNo) copy(memory.user(n), TEMP); // select patch
+        if (addr === addrToInt(commands.patchWrite)) copy(TEMP, memory.user(n)); // write patch
+      } else if (d[cmdAt] === 0x11) {
+        const size = addrToInt(d.slice(cmdAt + 5, cmdAt + 9));
         for (let s = 0; s < size; s += 128) {
           const chunk = [];
           for (let i = s; i < Math.min(size, s + 128); i++) chunk.push(mem.get(addr + i) ?? 0);

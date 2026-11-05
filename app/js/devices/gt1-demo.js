@@ -2,7 +2,7 @@
 // It is written for this project (generic effect and knob names), contains no Roland data,
 // and never reaches real hardware: the app blocks connecting to a GT-1 while it is loaded.
 // It uses the same shape as the extracted table so the whole editor UI works with it.
-import { WRITE_CHUNKS } from './model.js';
+// Part of the GT-1 profile (devices/gt1.js): it reuses the GT-1's block and parameter key names.
 
 const P = (id, name, min = 0, max = 100, step = 1) => ({ id, name, min, max, step, page: 1, row: 1 });
 const types = (...names) => names.map((name, val) => ({ val, name }));
@@ -82,9 +82,9 @@ export function demoParamDefs() {
 }
 
 // Lay the parameters out inside the same memory chunks the editor reads and writes.
-export function buildDemoDefs() {
+export function buildDemoTable(device) {
   const free = [];
-  for (const [b2, b3, size] of WRITE_CHUNKS) for (let i = 0; i < size; i++) free.push(b2 * 128 + b3 + i);
+  for (const [b2, b3, size] of device.memory.writeChunks) for (let i = 0; i < size; i++) free.push(b2 * 128 + b3 + i);
   let n = 0;
   const addr = {};
   const place = (key, size) => {
@@ -93,15 +93,15 @@ export function buildDemoDefs() {
     const o = free[n]; n += size;
     addr[key] = [o >> 7, o & 127, size];
   };
-  for (let i = 1; i <= 16; i++) place(`patch_name${i}`, 1);
-  for (let i = 1; i <= 20; i++) place(`fx_chain_position${i}`, 1);
+  device.patch.nameKeys.forEach((k) => place(k, 1));
+  device.patch.chainKeys.forEach((k) => place(k, 1));
   SWITCHES.forEach((k) => place(k, 1));
   TYPE_KEYS.forEach((k) => place(k, 1));
   for (const d of Object.values(demoParamDefs())) {
     const rawMax = Math.round((d.max - (d.min < 0 ? d.min : 0)) / (d.step || 1));
     place(d.id, rawMax > 127 ? 2 : 1);
   }
-  return { source: 'Built-in demo set (made up, not a real GT-1 parameter list)', demo: true, addr, defs: DEMO_DEFS_TABLE };
+  return { source: `Built-in demo set (made up, not a real ${device.name} parameter list)`, device: device.id, demo: true, addr, defs: DEMO_DEFS_TABLE };
 }
 
 export const DEMO_SWITCHES = SWITCHES;

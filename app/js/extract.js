@@ -1,13 +1,12 @@
-// Reads the GT-1 parameter table and factory presets out of the user's own copy of
-// BOSS TONE STUDIO for GT-1. Nothing from Roland is shipped with this app.
+// Reads a device's parameter table and factory presets out of the user's own copy of its
+// BOSS TONE STUDIO. Nothing from Roland is shipped with this app.
 //
-// Accepted input (any mix): Roland's download zip (bts_gt1_w102.zip), the installer .exe
-// (it is a zip archive inside), the installed program folder, or the .swf / .tsl files.
+// Accepted input (any mix): Roland's download zip, the installer .exe (it is a zip archive
+// inside), the installed program folder, or the .swf / .tsl files. Which device the files belong
+// to is recognised from their names (extract.swf / extract.presets in each device profile).
 //
 // This is a JavaScript port of tools/disasm.py + tools/evalcinit.py + tools/build_defs.py.
-
-const SWF_NAME = /BOSS_TONE_STUDIO_for_GT1\.swf$/i;
-const TSL_NAME = /gt_preset_patches\.tsl$/i;
+import { DEVICES } from './device.js';
 
 // ------------------------------------------------------------------ inflate helpers
 async function inflate(bytes, format) {
@@ -53,13 +52,18 @@ async function zipRead(buf, entry) {
   throw new Error(`Unsupported zip compression in ${entry.name}`);
 }
 
-// Look through files (and archives inside archives) for the .swf and the preset .tsl.
+// Look through files (and archives inside archives) for a supported device's .swf and preset .tsl.
+// Returns { device, swf, tsl }; device is null when no supported BOSS TONE STUDIO was found.
 export async function findRolandFiles(files, onStatus = () => {}) {
-  const found = { swf: null, tsl: null };
+  const found = { device: null, swf: null, tsl: null };
+  const presets = {}; // device id -> preset .tsl bytes
+  const done = () => found.swf && presets[found.device.id];
   async function visit(name, getBytes, depth) {
-    if (found.swf && found.tsl) return;
-    if (SWF_NAME.test(name) && !found.swf) { onStatus(`Reading ${name}…`); found.swf = await getBytes(); return; }
-    if (TSL_NAME.test(name) && !found.tsl) { found.tsl = await getBytes(); return; }
+    if (done()) return;
+    for (const dev of DEVICES) {
+      if (dev.extract.swf.test(name) && !found.swf) { onStatus(`Reading ${name}…`); found.device = dev; found.swf = await getBytes(); return; }
+      if (dev.extract.presets.test(name) && !presets[dev.id]) { presets[dev.id] = await getBytes(); return; }
+    }
     if (depth < 3 && /\.(zip|exe|air)$/i.test(name)) {
       onStatus(`Opening ${name.split('/').pop()}…`);
       const buf = await getBytes();
@@ -71,6 +75,7 @@ export async function findRolandFiles(files, onStatus = () => {}) {
   for (const f of files) {
     await visit(f.webkitRelativePath || f.name, async () => new Uint8Array(await f.arrayBuffer()), 0);
   }
+  found.tsl = found.device ? presets[found.device.id] ?? null : null;
   return found;
 }
 
@@ -291,19 +296,23 @@ function patchOffsets(code) {
   return addr;
 }
 
-export async function buildDefsFromSwf(swfBytes) {
+export async function buildDefsFromSwf(swfBytes, device) {
+  const { definitionsClass, offsetsMethod, minParams } = device.extract;
   const body = await swfBody(swfBytes);
   let cinit = null; let setData = null;
   for (const block of abcBlocks(body)) {
     const abc = parseAbc(block);
-    if (abc.bodies.has('ParameterDefinitionGT::<cinit>')) cinit = abc.decode(abc.bodies.get('ParameterDefinitionGT::<cinit>'));
-    if (abc.bodies.has('TemporaryParams::setData')) setData = abc.decode(abc.bodies.get('TemporaryParams::setData'));
+    if (abc.bodies.has(`${definitionsClass}::<cinit>`)) cinit = abc.decode(abc.bodies.get(`${definitionsClass}::<cinit>`));
+    if (abc.bodies.has(offsetsMethod)) setData = abc.decode(abc.bodies.get(offsetsMethod));
   }
-  if (!cinit || !setData) throw new Error('Could not find the GT-1 parameter tables in this file');
+  if (!cinit || !setData) throw new Error(`Could not find the ${device.name} parameter tables in this file`);
   const defs = resolve(evalCinit(cinit));
   const addr = patchOffsets(setData);
-  if (Object.keys(addr).length < 900 || !defs.FX1_TYPE) throw new Error('The parameter tables look incomplete');
-  return { source: 'BOSS TONE STUDIO for GT-1 (extracted in the browser)', addr, defs };
+  // every table the device profile relies on must be there
+  const needed = device.blocks.flatMap((b) => [b.types, b.params]).filter(Boolean);
+  const missing = needed.filter((t) => !defs[t]);
+  if (Object.keys(addr).length < minParams || missing.length) throw new Error(`The ${device.name} parameter tables look incomplete${missing.length ? ` (missing ${missing.join(', ')})` : ''}`);
+  return { source: `BOSS TONE STUDIO for ${device.name} (extracted in the browser)`, device: device.id, addr, defs };
 }
 
 export function parsePresets(tslBytes) {

@@ -1,28 +1,12 @@
-// GT-1 patch model: parameter table, value conversion, patch <-> bytes / .tsl
+// Patch model: parameter table, value conversion, patch <-> bytes / .tsl.
+// Device-neutral: memory layout and key names come from the active profile (device.js).
 import { addrToInt, intToAddr } from './midi.js';
+import { DEVICE } from './device.js';
 
 export let GT = null; // { addr: {key: [b2, b3, size]}, defs: {...} }
 
 // The table comes from the user's own copy of BOSS TONE STUDIO (see extract.js).
 export function setDefs(defs) { GT = defs; }
-
-// Temporary (edit buffer) patch lives at 60 00 xx xx.
-// User patch n (0-98) at 10 n xx xx, preset n at 20 n xx xx.
-export const TEMP_BASE = [0x60, 0x00];
-export const userBase = (n) => [0x10 + (n >> 7), n & 127];
-export const presetBase = (n) => [0x20 + (n >> 7), n & 127];
-
-// Read in 3 blocks of 8 pages (same as the original app), write in its exact chunks.
-export const READ_BLOCKS = [[0x00, 0x00], [0x08, 0x00], [0x10, 0x00]];
-export const READ_SIZE = 8 * 128;
-export const WRITE_CHUNKS = [
-  [0x00, 0x00, 64], [0x00, 0x50, 48], [0x01, 0x00, 64], [0x01, 0x40, 64], [0x02, 0x00, 65], [0x02, 0x41, 63],
-  [0x03, 0x00, 64], [0x03, 0x40, 64], [0x04, 0x00, 64], [0x04, 0x41, 63], [0x05, 0x01, 63], [0x05, 0x40, 64],
-  [0x06, 0x00, 64], [0x06, 0x40, 64], [0x07, 0x00, 64], [0x07, 0x40, 64], [0x08, 0x00, 64], [0x08, 0x50, 48],
-  [0x09, 0x10, 48], [0x09, 0x50, 48], [0x0a, 0x10, 33], [0x10, 0x10, 64], [0x10, 0x50, 48], [0x11, 0x00, 64],
-];
-
-const NAME_KEYS = Array.from({ length: 16 }, (_, i) => `patch_name${i + 1}`);
 
 export class Patch {
   constructor() {
@@ -80,12 +64,12 @@ export class Patch {
     const [b2, b3, size] = GT.addr[key];
     const v = this.get(key);
     const data = size === 2 ? [(v >> 7) & 127, v & 127] : [v & 127];
-    return [[...TEMP_BASE, b2, b3], data];
+    return [[...DEVICE.memory.temp, b2, b3], data];
   }
 
   // Whole patch as DT1 messages for a given 2-byte base (temp, user slot...)
-  chunks(base = TEMP_BASE) {
-    return WRITE_CHUNKS.map(([b2, b3, size]) => {
+  chunks(base = DEVICE.memory.temp) {
+    return DEVICE.memory.writeChunks.map(([b2, b3, size]) => {
       const start = b2 * 128 + b3;
       const data = [];
       for (let i = 0; i < size; i++) data.push(this.image.get(start + i) ?? 0);
@@ -95,12 +79,13 @@ export class Patch {
   }
 
   get name() {
-    return NAME_KEYS.map((k) => String.fromCharCode(this.get(k) || 32)).join('').replace(/\s+$/, '');
+    return DEVICE.patch.nameKeys.map((k) => String.fromCharCode(this.get(k) || 32)).join('').replace(/\s+$/, '');
   }
 
   set name(s) {
-    const padded = (s || '').slice(0, 16).padEnd(16, ' ');
-    NAME_KEYS.forEach((k, i) => {
+    const len = DEVICE.patch.nameKeys.length;
+    const padded = (s || '').slice(0, len).padEnd(len, ' ');
+    DEVICE.patch.nameKeys.forEach((k, i) => {
       let c = padded.charCodeAt(i);
       if (c < 32 || c > 126) c = 32;
       this.set(k, c);
@@ -118,7 +103,7 @@ export class Patch {
   }
 }
 
-export const chainOf = (patch) => Array.from({ length: 20 }, (_, i) => patch.get(`fx_chain_position${i + 1}`));
+export const chainOf = (patch) => DEVICE.patch.chainKeys.map((k) => patch.get(k));
 
 // ---- value <-> display conversion -------------------------------------------
 // From the factory presets: stored = (display - min) / step when min < 0, else display / step.
@@ -132,9 +117,9 @@ export function fromDisplay(def, disp) {
 }
 
 // Build .tsl (BOSS TONE STUDIO liveset) JSON from patches.
-export function buildTsl(patches, name = 'Open GT-1 Web Editor export') {
+export function buildTsl(patches, name = `${DEVICE.name} export`) {
   return {
-    device: 'GT-1',
+    device: DEVICE.tslDevice,
     patchList: patches.map((p, i) => ({
       name: p.name, id: String(i + 1), orderNumber: i + 1, category: '', category2: '', note: '',
       params: p.toTslParams(),

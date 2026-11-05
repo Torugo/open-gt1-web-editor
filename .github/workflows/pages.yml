@@ -29,11 +29,11 @@ jobs:
       - name: Add version to file URLs
         run: |
           V="${GITHUB_SHA::8}"
-          sed -i -E "s#(from '\./[A-Za-z0-9_-]+\.js)'#\1?v=$V'#g" app/js/*.js
+          sed -i -E "s#(from '\./[A-Za-z0-9_/-]+\.js)'#\1?v=$V'#g" app/js/*.js app/js/devices/*.js
           sed -i -E "s#(src=\"js/app\.js)\"#\1?v=$V\"#; s#(href=\"css/style\.css)\"#\1?v=$V\"#" app/index.html
-          grep -c "?v=$V" app/index.html app/js/*.js
-          # every relative import must now carry the version
-          if grep -nE "from '\./[A-Za-z0-9_-]+\.js'" app/js/*.js; then echo "unversioned import left"; exit 1; fi
+          grep -c "?v=$V" app/index.html app/js/*.js app/js/devices/*.js
+          # every relative import (including ./devices/…) must now carry the version
+          if grep -nE "from '\.\.?/[A-Za-z0-9_./-]+\.js'" app/js/*.js app/js/devices/*.js; then echo "unversioned import left"; exit 1; fi
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

@@ -97,14 +97,19 @@ setting" lists for the GT-100 and GT-001, and effect types the GT-1 does not hav
 | ME-80, ME-25 | Medium | Possibly the same platform; needs checking |
 | Katana, GT-1000 | Unknown | Newer editors, may be built differently; look at the files first |
 
-**Suggested path**
+**How to add one**
 
-1. Move everything GT-1 specific (block list, chain IDs, model ID, memory layout, which tables to
-   extract) into a *device profile*, with the GT-1 as the first one, and let the setup screen detect
-   which device's files it was given. No hardware needed; GT-1 behaviour must stay identical.
-2. For each new device: run the extraction on its BOSS TONE STUDIO (`tools/build_defs.py` and
-   `tools/disasm.py` show how the GT-1 tables were found), fill in its profile, then test every
-   operation on the real unit, the same list as above.
+Everything device-specific lives in a *device profile*: `app/js/devices/gt1.js` is the GT-1's and the
+template for others. It holds the SysEx model ID, MIDI port names, memory map (edit buffer, user and
+preset memories, read/write chunks), editor commands, name and chain keys, the effect blocks and
+their rules, which BOSS TONE STUDIO files and classes to extract from, and the demo settings.
+The rest of the editor only asks the active profile, and the setup screen picks the profile from the
+files it is given.
+
+1. Copy `devices/gt1.js` to `devices/<device>.js` and add it to `DEVICES` in `app/js/device.js`.
+2. Run the extraction on that device's BOSS TONE STUDIO (`tools/build_defs.py` and `tools/disasm.py`
+   show how the GT-1 tables were found) and fill in the profile from what you find.
+3. Test every operation on the real unit, the same list as above.
 
 If you own one of these units and want to try, open an issue first so the work can be shared.
 
@@ -114,9 +119,12 @@ If you own one of these units and want to try, open an issue first so the work c
 |---|---|
 | `app/` | The web app (static files, no build step) — deployed to GitHub Pages as-is |
 | `app/js/extract.js` | Reads the parameter table out of the user's BOSS TONE STUDIO files |
+| `app/js/device.js` | Device registry: which profile is active |
+| `app/js/devices/gt1.js` | GT-1 profile: memory map, commands, effect blocks, extraction settings |
+| `app/js/devices/gt1-demo.js` | Made-up GT-1 parameter set for the demo before import |
 | `app/js/midi.js` | Web MIDI + Roland SysEx (RQ1/DT1, checksum) |
 | `app/js/model.js` | Patch bytes ⇄ values ⇄ `.tsl` |
-| `app/js/blocks.js` | Effect blocks, types, sub types, labels |
+| `app/js/blocks.js` | Effect block helpers: types, sub types, labels, visibility |
 | `app/js/app.js` | UI and setup screen |
 | `app/js/store.js` | Browser storage (IndexedDB) for the extracted data |
 | `tools/` | The same extraction in Python, for development |

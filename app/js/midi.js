@@ -1,10 +1,11 @@
-// Web MIDI + Roland SysEx transport for the BOSS GT-1.
+// Web MIDI + Roland SysEx transport. Device-neutral: the model ID and MIDI port names come from
+// the active profile (device.js).
 // Message format (from the original app's SystemExclusive class):
-//   F0 41 <dev> 00 00 00 30 <cmd> <addr x4> <data | size x4> <checksum> F7
+//   F0 41 <dev> <model id x4> <cmd> <addr x4> <data | size x4> <checksum> F7
 //   cmd 11 = RQ1 (request data), 12 = DT1 (data set)
+import { DEVICE } from './device.js';
 
 const ROLAND = 0x41;
-const MODEL = [0x00, 0x00, 0x00, 0x30];
 const RQ1 = 0x11;
 const DT1 = 0x12;
 
@@ -17,7 +18,7 @@ export function checksum(bytes) {
 export const addrToInt = (a) => ((a[0] * 128 + a[1]) * 128 + a[2]) * 128 + a[3];
 export const intToAddr = (n) => [(n >> 21) & 127, (n >> 14) & 127, (n >> 7) & 127, n & 127];
 
-export class GT1Midi extends EventTarget {
+export class RolandMidi extends EventTarget {
   constructor() {
     super();
     this.access = null;
@@ -44,10 +45,11 @@ export class GT1Midi extends EventTarget {
     return { ins, outs };
   }
 
-  // Pick the GT-1 ports automatically when their names say so.
+  // Pick the device's ports automatically when their names say so.
   guessPorts() {
     const { ins, outs } = this.ports();
-    const pick = (list) => list.find((p) => /GT-1/i.test(p.name) && !/CTRL|DAW/i.test(p.name)) || list.find((p) => /GT-1/i.test(p.name));
+    const { portName, portAvoid } = DEVICE;
+    const pick = (list) => list.find((p) => portName.test(p.name) && !(portAvoid && portAvoid.test(p.name))) || list.find((p) => portName.test(p.name));
     return { input: pick(ins), output: pick(outs) };
   }
 
@@ -66,7 +68,7 @@ export class GT1Midi extends EventTarget {
 
   build(cmd, addr, payload) {
     const body = [...addr, ...payload];
-    return [0xf0, ROLAND, this.deviceId, ...MODEL, cmd, ...body, checksum(body), 0xf7];
+    return [0xf0, ROLAND, this.deviceId, ...DEVICE.modelId, cmd, ...body, checksum(body), 0xf7];
   }
 
   dt1(addr, data) {
@@ -82,7 +84,7 @@ export class GT1Midi extends EventTarget {
       req.timer = setTimeout(() => {
         this.pending = this.pending.filter((p) => p !== req);
         if (req.got.size) resolve(req.got);
-        else reject(new Error('Timed out waiting for GT-1 reply'));
+        else reject(new Error(`Timed out waiting for the ${DEVICE.name} to reply`));
       }, timeoutMs);
       this.pending.push(req);
       this.sendRaw(this.build(RQ1, addr, intToAddr7Size(size)));
@@ -111,13 +113,16 @@ export class GT1Midi extends EventTarget {
       this.dispatchEvent(new CustomEvent('identity', { detail: { deviceId: d[2], bytes: d } }));
       return;
     }
-    if (d[0] !== 0xf0 || d[1] !== ROLAND || d[7] !== DT1) {
+    // Model IDs differ in length between BOSS units, so the command byte position depends on it.
+    const model = DEVICE.modelId;
+    const cmdAt = 3 + model.length;
+    if (d[0] !== 0xf0 || d[1] !== ROLAND || d[cmdAt] !== DT1) {
       if ((d[0] & 0xf0) === 0xc0) this.dispatchEvent(new CustomEvent('program', { detail: d[1] }));
       return;
     }
-    if (d[3] !== MODEL[0] || d[4] !== MODEL[1] || d[5] !== MODEL[2] || d[6] !== MODEL[3]) return;
-    const addr = d.slice(8, 12);
-    const payload = d.slice(12, d.length - 2);
+    if (model.some((b, i) => d[3 + i] !== b)) return;
+    const addr = d.slice(cmdAt + 1, cmdAt + 5);
+    const payload = d.slice(cmdAt + 5, d.length - 2);
     const start = addrToInt(addr);
     const map = new Map();
     payload.forEach((b, i) => map.set(start + i, b));
