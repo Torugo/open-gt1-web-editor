@@ -3,3 +3,4 @@ tools/build/
 app/data/
 *.zip
 __pycache__/
+*.tsl
