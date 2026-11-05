@@ -2,6 +2,7 @@
 // Every GT-1-specific fact the editor needs. Values come from the original BOSS TONE STUDIO for GT-1
 // (see tools/ and the README's protocol notes) and were tested on a real unit.
 import { DEMO_DEFS_TABLE, buildDemoTable, demoParamDefs, DEMO_SWITCHES, DEMO_TYPE_KEYS } from './gt1-demo.js';
+import { GT1_HINTS } from './gt1-hints.js';
 
 const pad2 = (n) => String(n).padStart(2, '0');
 
@@ -116,6 +117,12 @@ export const GT1 = {
   structural: { keys: ['divider_mode', 'send_return_mode', 'preamp_a_sp_type', 'preamp_b_sp_type'], pattern: /_harmonist_hr\dharm$/ },
   // Preamp B reuses Preamp A's dropdowns and rules
   aliases: [['preamp_b_', 'preamp_a_']],
+  // Hover hints: which real gear an effect type models (from the GT-1 Parameter Guide)
+  hints: GT1_HINTS,
+  // Simple chain view (like BOSS TONE STUDIO's): the main blocks only, in their chain order
+  simpleChain: ['fx1', 'pedal', 'odds', 'preA', 'ns1', 'fv', 'fx2', 'delay', 'reverb'],
+  // Icon per block in the simple view: amp, treadle (expression pedal) or pedal (default)
+  icons: { preA: 'amp', preB: 'amp', pedal: 'treadle', fv: 'treadle' },
 
   // ---- files ----------------------------------------------------------------------------------
   tslDevice: 'GT-1',

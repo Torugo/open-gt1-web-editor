@@ -37,7 +37,16 @@ export function subInfo(block, patch) {
     list = block.subLists ? tables[listRef] : tables[t];
   }
   if (!list) return null;
-  return { param, list, name: (list.find((x) => x.val === patch.get(param)) || {}).name };
+  const key = typeof listRef === 'string' ? (block.subLists ? listRef : t) : null;
+  return { param, list, key, name: (list.find((x) => x.val === patch.get(param)) || {}).name };
+}
+
+// Hover hint for a block's current type (e.g. "Models a Fender Deluxe Reverb"), from the profile
+export function typeHint(block, name) {
+  return name ? DEVICE.hints?.type?.[block.id]?.[name] ?? null : null;
+}
+export function subHint(sub, name) {
+  return sub?.key && name ? DEVICE.hints?.sub?.[sub.key]?.[name] ?? null : null;
 }
 
 export function paramDefs(block, patch) {

@@ -3,7 +3,7 @@ import * as store from './store.js';
 import { findRolandFiles, buildDefsFromSwf, parsePresets } from './extract.js';
 import { createVirtualDevice, scratchPresets } from './demo.js';
 import { GT, setDefs, Patch, chainOf, buildTsl, fromDisplay } from './model.js';
-import { blockById, blockByChain, typeList, typeName, subInfo, paramDefs, dropdownFor, stepperFor, stepperSplit, labelOf, isEnabled, pretty } from './blocks.js';
+import { blockById, blockByChain, typeList, typeName, subInfo, typeHint, subHint, paramDefs, dropdownFor, stepperFor, stepperSplit, labelOf, isEnabled, pretty } from './blocks.js';
 import { DEVICE, DEVICES, setDevice } from './device.js';
 
 const $ = (s) => document.querySelector(s);
@@ -213,17 +213,21 @@ function renderPanel() {
     const cb = el('input', { type: 'checkbox', checked: p.get(b.sw) === 1, onchange: (e) => changeParam(b.sw, e.target.checked ? 1 : 0) });
     head.append(el('label', { class: 'switch' }, cb, 'On'));
   }
+  // Type and sub type, with what each model is based on (hint under the select and on hover)
+  const withHint = (label, sel, hint) => el('label', { class: 'sel-wrap' }, label, sel, el('span', { class: 'type-hint' }, hint || ''));
   const types = typeList(b);
   if (types) {
-    const sel = el('select', { class: 'big', onchange: (e) => changeParam(b.type, +e.target.value, { rerender: true }) },
-      types.map((t) => el('option', { value: t.val, selected: t.val === p.get(b.type) }, pretty(t.name))));
-    head.append(el('label', { class: 'sel-wrap' }, 'Type', sel));
+    const hint = typeHint(b, typeName(b, p));
+    const sel = el('select', { class: 'big', title: hint || '', onchange: (e) => changeParam(b.type, +e.target.value, { rerender: true }) },
+      types.map((t) => el('option', { value: t.val, selected: t.val === p.get(b.type), title: typeHint(b, t.name) || '' }, pretty(t.name))));
+    head.append(withHint('Type', sel, hint));
   }
   const sub = subInfo(b, p);
   if (sub) {
-    const sel = el('select', { class: 'big', onchange: (e) => changeParam(sub.param, +e.target.value, { rerender: true }) },
-      sub.list.map((t) => el('option', { value: t.val, selected: t.val === p.get(sub.param) }, t.name)));
-    head.append(el('label', { class: 'sel-wrap' }, 'Sub type', sel));
+    const hint = subHint(sub, sub.name);
+    const sel = el('select', { class: 'big', title: hint || '', onchange: (e) => changeParam(sub.param, +e.target.value, { rerender: true }) },
+      sub.list.map((t) => el('option', { value: t.val, selected: t.val === p.get(sub.param), title: subHint(sub, t.name) || '' }, t.name)));
+    head.append(withHint('Sub type', sel, hint));
   }
   panel.append(head);
 
@@ -234,20 +238,58 @@ function renderPanel() {
 
 // ---------------------------------------------------------------- chain
 let dragFrom = null;
+
+// Small line icons for the simple chain view (drawn for this project)
+const ICON_PATHS = {
+  pedal: '<rect x="5" y="3" width="14" height="18" rx="2"/><circle cx="9" cy="7.5" r="1.4"/><circle cx="15" cy="7.5" r="1.4"/><rect x="8.5" y="13" width="7" height="5" rx="1"/>',
+  amp: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9h18"/><circle cx="6" cy="7" r=".6"/><circle cx="9" cy="7" r=".6"/><circle cx="12" cy="7" r=".6"/><path d="M6 12h12M6 15h12"/>',
+  treadle: '<path d="M4 19h16v-2L7 9 4 11z"/><path d="M9 19v-3"/>',
+  guitar: '<path d="M13.5 10.5 20 4"/><path d="M18 2.5l3.5 3.5"/><path d="M11 9.5a3.5 3.5 0 0 0-5 0c-1 1-.8 2-1.8 3S2 14 2.8 16.7 7.3 21.2 10 20.8s2-2.4 3.3-3.6 2-1.6.4-4.2"/><circle cx="9" cy="15" r="1.3"/>',
+  speaker: '<rect x="4" y="3" width="16" height="18" rx="2"/><circle cx="12" cy="13.5" r="4.5"/><circle cx="12" cy="13.5" r="1.2"/><path d="M8 6.5h8"/>',
+};
+const icon = (name) => {
+  const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  s.setAttribute('viewBox', '0 0 24 24');
+  s.setAttribute('aria-hidden', 'true');
+  s.innerHTML = ICON_PATHS[name] || ICON_PATHS.pedal;
+  return s;
+};
+
+// "PREAMP A · DELUXE CRUNCH — Models a Fender Deluxe Reverb"
+function blockTitle(b, p) {
+  const t = typeName(b, p);
+  const hint = typeHint(b, t);
+  return b.name + (t ? ` · ${pretty(t)}` : '') + (hint ? ` — ${hint}` : '');
+}
+
+// Two views: "simple" (IN → main blocks with LEDs and icons → OUT, like BOSS TONE STUDIO)
+// and "full" (every block, including routing). Choice is remembered per browser.
+state.chainView = (() => { try { return localStorage.getItem('chainView') || 'simple'; } catch { return 'simple'; } })();
+function setChainView(v) {
+  state.chainView = v;
+  try { localStorage.setItem('chainView', v); } catch { /* storage blocked: still works for this visit */ }
+  renderChain();
+}
+
 function renderChain() {
   const c = $('#chain');
   c.replaceChildren();
+  const simple = state.chainView === 'simple' && !!DEVICE.simpleChain;
+  c.classList.toggle('simple', simple);
+  document.querySelectorAll('#chainView button').forEach((x) => x.setAttribute('aria-pressed', String(x.dataset.view === (simple ? 'simple' : 'full'))));
   const p = state.patch;
   if (!p) return;
   const order = chainOf(p);
+  if (simple) c.append(el('div', { class: 'chain-end', title: 'Guitar input' }, el('span', {}, 'IN'), icon('guitar')));
   order.forEach((val, idx) => {
     const b = blockByChain(val);
     if (!b) return;
+    if (simple && !DEVICE.simpleChain.includes(b.id)) return;
     const on = b.sw ? p.get(b.sw) === 1 : true;
     const t = typeName(b, p);
     const node = el('div', {
       class: `blk${on ? '' : ' off'}${b.fixed ? ' fixed' : ''}${state.block === b.id ? ' sel' : ''}`,
-      style: `--c:${b.color}`, draggable: 'true', title: b.name + (t ? ` · ${pretty(t)}` : ''),
+      style: `--c:${b.color}`, draggable: 'true', title: blockTitle(b, p),
       onclick: () => { if (!b.fixed) { state.block = b.id; render(); } },
       ondragstart: (e) => { dragFrom = idx; node.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; },
       ondragend: () => { dragFrom = null; node.classList.remove('dragging'); },
@@ -255,17 +297,30 @@ function renderChain() {
       ondragleave: () => node.classList.remove('drop-before'),
       ondrop: (e) => { e.preventDefault(); node.classList.remove('drop-before'); moveChain(dragFrom, idx); },
     });
-    if (b.sw) {
-      node.append(el('span', { class: 'led', title: 'On/off', onclick: (e) => { e.stopPropagation(); changeParam(b.sw, on ? 0 : 1, { rerender: true }); } }));
+    const led = b.sw
+      ? el('span', { class: 'led', title: 'On/off', onclick: (e) => { e.stopPropagation(); changeParam(b.sw, on ? 0 : 1, { rerender: true }); } })
+      : el('span', { class: 'led none' });
+    if (simple) {
+      node.append(el('span', { class: 'nm' }, b.short), led, el('span', { class: 'ico' }, icon(DEVICE.icons?.[b.id])));
+    } else {
+      if (b.sw) node.append(led);
+      node.append(el('span', {}, b.short));
+      if (t && !b.fixed) node.append(el('span', { class: 't' }, pretty(t)));
     }
-    node.append(el('span', {}, b.short));
-    if (t && !b.fixed) node.append(el('span', { class: 't' }, pretty(t)));
     c.append(node);
   });
   // Master settings are not part of the chain order but edited the same way
   const m = blockById('master');
-  if (m) c.append(el('div', { class: `blk master${state.block === 'master' ? ' sel' : ''}`, style: `--c:${m.color}`, title: 'Master settings',
-    onclick: () => { state.block = 'master'; render(); } }, el('span', {}, 'MST'), el('span', { class: 't' }, 'MASTER')));
+  if (m) {
+    const sel = state.block === 'master' ? ' sel' : '';
+    const go = () => { state.block = 'master'; render(); };
+    c.append(simple
+      ? el('div', { class: `blk master${sel}`, style: `--c:${m.color}`, title: 'Master settings', onclick: go },
+        el('span', { class: 'nm' }, 'MST'), el('span', { class: 'led none' }), el('span', { class: 'ico' }, icon('pedal')))
+      : el('div', { class: `blk master${sel}`, style: `--c:${m.color}`, title: 'Master settings', onclick: go },
+        el('span', {}, 'MST'), el('span', { class: 't' }, 'MASTER')));
+  }
+  if (simple) c.append(el('div', { class: 'chain-end', title: 'Output' }, el('span', {}, 'OUT'), icon('speaker')));
 }
 
 function moveChain(from, to) {
@@ -725,6 +780,8 @@ async function main() {
   await loadRolandData();
   // labels that name the device
   document.querySelector('.tab[data-tab=user]').textContent = `${DEVICE.name} User`;
+  document.querySelectorAll('#chainView button').forEach((x) => x.addEventListener('click', () => setChainView(x.dataset.view)));
+  if (!DEVICE.simpleChain) $('#chainView').hidden = true;
   $('#btnReimport').addEventListener('click', importForReal);
   $('#btnDemoImport').addEventListener('click', importForReal);
 
