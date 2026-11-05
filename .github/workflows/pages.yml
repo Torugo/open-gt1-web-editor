@@ -24,6 +24,16 @@ jobs:
       - name: Check no Roland data is deployed
         run: |
           if [ -e app/data ]; then echo "app/data must not be committed"; exit 1; fi
+      # Pages lets browsers cache files for 10 minutes. Stamp every script and stylesheet
+      # with the commit, so a browser never mixes an old cached file with a new page.
+      - name: Add version to file URLs
+        run: |
+          V="${GITHUB_SHA::8}"
+          sed -i -E "s#(from '\./[A-Za-z0-9_-]+\.js)'#\1?v=$V'#g" app/js/*.js
+          sed -i -E "s#(src=\"js/app\.js)\"#\1?v=$V\"#; s#(href=\"css/style\.css)\"#\1?v=$V\"#" app/index.html
+          grep -c "?v=$V" app/index.html app/js/*.js
+          # every relative import must now carry the version
+          if grep -nE "from '\./[A-Za-z0-9_-]+\.js'" app/js/*.js; then echo "unversioned import left"; exit 1; fi
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

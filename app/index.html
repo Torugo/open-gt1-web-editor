@@ -130,5 +130,14 @@
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <script type="module" src="js/app.js"></script>
+  <script>
+    // If the editor code fails to load (old cached files, blocked script…), say so instead of a dead page.
+    setTimeout(function () {
+      if (window.__appStarted) return;
+      var t = document.getElementById('toast');
+      t.textContent = 'The editor did not start. Reload the page with Ctrl+F5 (Cmd+Shift+R on Mac).';
+      t.className = 'toast show err';
+    }, 6000);
+  </script>
 </body>
 </html>
