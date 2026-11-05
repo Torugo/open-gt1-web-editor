@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>REA-BOSS · GT-1 Editor</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%23111'/><circle cx='16' cy='16' r='9' fill='none' stroke='%23e3262d' stroke-width='3'/><path d='M16 16 L16 8' stroke='%23fff' stroke-width='3' stroke-linecap='round'/></svg>">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="logo">REA·BOSS</span><span class="model">GT-1</span></div>
+
+    <div class="patch-head">
+      <span id="patchSource" class="tag">—</span>
+      <input id="patchName" maxlength="16" spellcheck="false" placeholder="PATCH NAME" aria-label="Patch name">
+    </div>
+
+    <div class="actions">
+      <button id="btnWrite" class="btn primary" disabled title="Store the current sound into a user memory on the GT-1">Write…</button>
+      <button id="btnImport" class="btn" title="Open a .tsl liveset file">Import .tsl</button>
+      <button id="btnExport" class="btn" title="Save the current patch as a .tsl file">Export .tsl</button>
+      <input id="fileInput" type="file" accept=".tsl,.json" hidden>
+    </div>
+
+    <div class="conn">
+      <span id="connDot" class="dot off"></span>
+      <span id="connText">Offline</span>
+      <button id="btnConnect" class="btn">Connect GT-1</button>
+      <button id="btnSettings" class="btn icon" title="MIDI ports and log" aria-label="MIDI settings">⚙</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <aside class="library">
+      <div class="tabs" role="tablist">
+        <button class="tab active" data-tab="user" role="tab">GT-1 User</button>
+        <button class="tab" data-tab="factory" role="tab">Factory</button>
+        <button class="tab" data-tab="file" role="tab">File</button>
+      </div>
+      <input id="libFilter" class="filter" placeholder="Filter…" aria-label="Filter patches">
+      <ol id="libList" class="patch-list"></ol>
+      <p id="libHint" class="hint"></p>
+    </aside>
+
+    <section class="editor">
+      <div class="chain-wrap">
+        <div class="section-title">
+          <h2>Effect chain</h2>
+          <span class="sub">Click a block to edit · click the LED to switch it on/off · drag to reorder</span>
+        </div>
+        <div id="chain" class="chain"></div>
+      </div>
+
+      <div id="panel" class="panel"></div>
+    </section>
+  </main>
+
+  <dialog id="writeDlg" class="dlg">
+    <form method="dialog">
+      <h3>Write patch to GT-1</h3>
+      <p class="muted">Stores the sound you are editing into a user memory. This overwrites what is there.</p>
+      <label>User memory
+        <select id="writeSlot"></select>
+      </label>
+      <menu>
+        <button value="cancel" class="btn">Cancel</button>
+        <button value="ok" class="btn primary">Write</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <dialog id="settingsDlg" class="dlg wide">
+    <form method="dialog">
+      <h3>MIDI connection</h3>
+      <div class="grid2">
+        <label>Input <select id="selIn"></select></label>
+        <label>Output <select id="selOut"></select></label>
+      </div>
+      <label class="check"><input type="checkbox" id="chkLog"> Show MIDI log</label>
+      <pre id="midiLog" class="log" hidden></pre>
+      <menu>
+        <button value="close" class="btn">Close</button>
+        <button value="apply" class="btn primary" id="btnApplyPorts">Use these ports</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

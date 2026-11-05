@@ -1,0 +1,5 @@
+backup/
+tools/build/
+app/data/
+*.zip
+__pycache__/
