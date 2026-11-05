@@ -1,0 +1,9 @@
+# docker compose up -d   ->   open http://localhost:8123 in Chrome or Edge
+services:
+  rea-boss:
+    build: .
+    image: rea-boss:latest
+    ports:
+      # Bound to localhost on purpose: Web MIDI only works on localhost or https.
+      - "127.0.0.1:8123:80"
+    restart: unless-stopped
