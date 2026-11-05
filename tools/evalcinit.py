@@ -1,6 +1,6 @@
 """Replay a static initializer (cinit) from disasm text and dump all static constants as JSON.
 Also extracts AddressMap.setAllAddress index->key mappings."""
-import sys, json, re, ast
+import sys, json, re, ast, os
 
 dis = open(sys.argv[1], encoding="utf-8").read().split("\n")
 outdir = sys.argv[2]
@@ -58,7 +58,7 @@ def eval_cinit(cls):
 
 for cls in classes:
     s = eval_cinit(cls)
-    json.dump(s, open(outdir + "\\def_" + cls + ".json", "w", encoding="utf-8"), indent=1)
+    json.dump(s, open(os.path.join(outdir, "def_" + cls + ".json"), "w", encoding="utf-8"), indent=1)
     print(cls, len(s), "statics:", list(s.keys())[:400])
 
 # address map index -> key
@@ -80,5 +80,5 @@ for i, ln in enumerate(lines):
         elif o1 == "ifne" or (o1 == "pushbyte" and o2 != "ifne"):
             pass
 # index 0 case uses 'pushbyte 0 / ifne'; handled. Some use 'getlocal2 / ifne' (zero test)?
-json.dump(mp, open(outdir + "\\addrkeys.json", "w"), indent=1)
+json.dump(mp, open(os.path.join(outdir, "addrkeys.json"), "w"), indent=1)
 print({k: len(v) for k, v in mp.items()})
