@@ -341,6 +341,7 @@ let loadSeq = 0;
 async function selectUserPatch(n) {
   const my = ++loadSeq;
   setConn('busy', 'Loading…');
+  state.pendingSelect = n; // so the unit's echo of this change is not treated as a panel change
   midi.dt1(SETUP_PATCH_NO, [(n >> 7) & 127, n & 127]);
   await sleep(250);
   if (my !== loadSeq) return;
@@ -359,6 +360,8 @@ async function selectUserPatch(n) {
   state.source = { kind: 'user', index: n, label: `GT-1 U${String(n + 1).padStart(2, '0')}` };
   setConn('on', connLabel());
   render();
+  // the unit's echo arrives within milliseconds; after that, changes to this patch on the panel count again
+  setTimeout(() => { if (state.pendingSelect === n) state.pendingSelect = null; }, 1000);
 }
 
 async function readUserNames() {
@@ -439,8 +442,21 @@ let resyncTimer;
 function onDeviceData(e) {
   const { start, bytes } = e.detail;
   if (start === addrToInt(SETUP_PATCH_NO)) {
+    // The GT-1 announces every patch change, including the ones this editor asked for.
+    const hi = bytes.get(start);
+    const n = hi === undefined ? null : hi * 128 + (bytes.get(start + 1) ?? 0);
+    if (n !== null && n === state.pendingSelect) return; // echo of our own selection
     clearTimeout(resyncTimer);
-    resyncTimer = setTimeout(async () => { state.patch = await readTemp(); state.source = { kind: 'device', label: 'GT-1' }; render(); }, 200);
+    resyncTimer = setTimeout(async () => {
+      const my = ++loadSeq;
+      const patch = await readTemp();
+      if (my !== loadSeq) return;
+      state.patch = patch;
+      state.source = n === null ? { kind: 'device', label: 'GT-1' }
+        : n < 99 ? { kind: 'user', index: n, label: `GT-1 U${String(n + 1).padStart(2, '0')}` }
+          : { kind: 'device', label: `GT-1 P${String(n - 98).padStart(2, '0')}` };
+      render();
+    }, 200);
     return;
   }
   if (start >= TEMP_START && start < TEMP_END && state.patch) {
