@@ -29,12 +29,12 @@ On Linux the GT-1 must show up as a MIDI device (`aconnect -l`); this has not be
 
 ## Run it yourself
 
-Any of these serves the same static page on <http://localhost:8123>:
+With Docker, on any OS:
 
-| How | Command |
-|---|---|
-| Docker (any OS) | `docker compose up -d` (stop with `docker compose down`) |
-| Without Docker, macOS / Linux | `./start.sh` (needs Python 3) |
+```
+docker compose up -d      # then open http://localhost:8123
+docker compose down       # stop it
+```
 
 The page must be opened as `http://localhost…` or `https://…`: browsers only allow Web MIDI there.
 The Docker container only serves files; it needs no USB access, because the browser on your computer
@@ -80,8 +80,6 @@ Not rebuilt yet: system settings, tuner, CTL/EXP assign editor, copy/move betwee
 | `app/js/store.js` | Browser storage (IndexedDB) for the extracted data |
 | `tools/` | The same extraction in Python, for development |
 | `Dockerfile`, `compose.yaml`, `docker/` | nginx container serving `app/` |
-| `start.sh` | Launcher without Docker (macOS / Linux) |
-
 ## Local development
 
 ```
