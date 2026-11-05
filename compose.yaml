@@ -1,8 +1,9 @@
 # docker compose up -d   ->   open http://localhost:8123 in Chrome or Edge
+name: open-gt1-web-editor
 services:
-  rea-boss:
+  open-gt1-web-editor:
     build: .
-    image: rea-boss:latest
+    image: open-gt1-web-editor:latest
     ports:
       # Bound to localhost on purpose: Web MIDI only works on localhost or https.
       - "127.0.0.1:8123:80"

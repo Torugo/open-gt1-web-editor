@@ -1,4 +1,4 @@
-# Serves the REA-BOSS GT-1 editor (static files only).
+# Serves the Open GT-1 Web Editor (static files only).
 # The container never touches USB/MIDI: the browser on the host talks to the GT-1.
 # Roland's data is not baked in; users load it from their own files on first run.
 FROM nginx:1.27-alpine

@@ -1,9 +1,9 @@
-# REA-BOSS — GT-1 editor in the browser
+# Open GT-1 Web Editor
 
 An unofficial rebuild of **BOSS TONE STUDIO for GT-1** (Adobe AIR) as a plain web app.
 It talks to the GT-1 over USB with **Web MIDI**, using the normal Roland GT-1 driver — no AIR, no plugins.
 
-**Open it:** <https://torugo.github.io/rea-boss/> (Chrome or Edge)
+**Open it:** <https://torugo.github.io/open-gt1-web-editor/> (Chrome or Edge)
 
 Not affiliated with or endorsed by Roland / BOSS.
 
@@ -78,6 +78,15 @@ python -I tools/build_defs.py path/to/installed-program   # writes app/data/ (gi
 
 When `app/data/` exists locally the setup screen is skipped. `app/data/` is never committed, and the
 Pages workflow refuses to deploy if it is.
+
+## License
+
+[GNU AGPL-3.0](LICENSE). You may use, change and share this editor. If you share a modified version,
+or run one as a website, you must make its source code available under the same license
+(for a website: keep a "Source" link like the one in the page footer). See [NOTICE](NOTICE).
+
+Roland's parameter data and presets are not part of this project or its license. BOSS, GT-1 and
+BOSS TONE STUDIO are trademarks of Roland Corporation, used here only to say which device this works with.
 
 ## Protocol notes (GT-1)
 

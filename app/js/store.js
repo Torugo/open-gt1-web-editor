@@ -1,6 +1,6 @@
 // Tiny IndexedDB key-value store. Holds the data extracted from the user's own Roland files,
 // so the import is done once per browser. Every call fails soft (private mode, blocked storage).
-const DB = 'rea-boss';
+const DB = 'open-gt1-web-editor';
 const STORE = 'kv';
 
 function open() {

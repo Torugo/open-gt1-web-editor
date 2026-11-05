@@ -1,5 +1,5 @@
 #!/bin/sh
-# Starts the REA-BOSS GT-1 editor on http://localhost:8123 (macOS / Linux).
+# Starts the Open GT-1 Web Editor on http://localhost:8123 (macOS / Linux).
 # Web MIDI only works on localhost or https, so the page must be served, not opened as a file.
 cd "$(dirname "$0")" || exit 1
 URL="http://localhost:8123/"

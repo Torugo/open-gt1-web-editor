@@ -2,13 +2,13 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "rea-boss",
+      "name": "open-gt1-web-editor",
       "runtimeExecutable": "python",
       "runtimeArgs": ["-m", "http.server", "8123", "--bind", "127.0.0.1", "-d", "app"],
       "port": 8123
     },
     {
-      "name": "rea-boss-root",
+      "name": "open-gt1-web-editor-root",
       "runtimeExecutable": "python",
       "runtimeArgs": ["-m", "http.server", "8124", "--bind", "127.0.0.1"],
       "port": 8124

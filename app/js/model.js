@@ -132,7 +132,7 @@ export function fromDisplay(def, disp) {
 }
 
 // Build .tsl (BOSS TONE STUDIO liveset) JSON from patches.
-export function buildTsl(patches, name = 'REA-BOSS export') {
+export function buildTsl(patches, name = 'Open GT-1 Web Editor export') {
   return {
     device: 'GT-1',
     patchList: patches.map((p, i) => ({
