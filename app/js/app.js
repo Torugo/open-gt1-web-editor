@@ -1,6 +1,7 @@
 import { GT1Midi, addrToInt } from './midi.js';
 import * as store from './store.js';
 import { findRolandFiles, buildDefsFromSwf, parsePresets } from './extract.js';
+import { createVirtualGT1 } from './demo.js';
 import { GT, setDefs, Patch, READ_BLOCKS, READ_SIZE, TEMP_BASE, chainOf, buildTsl, fromDisplay } from './model.js';
 import { BLOCKS, BLOCK_BY_CHAIN, typeList, typeName, subInfo, paramDefs, dropdownFor, stepperFor, stepperSplit, labelOf, isEnabled, pretty } from './blocks.js';
 
@@ -57,7 +58,12 @@ function setConn(kind, text) {
   $('#connDot').className = 'dot ' + kind;
   $('#connText').textContent = text;
   $('#btnWrite').disabled = !state.connected;
-  $('#btnConnect').textContent = state.connected ? 'Re-sync' : 'Connect GT-1';
+  $('#btnConnect').textContent = state.connected && !state.demo ? 'Re-sync' : 'Connect GT-1';
+  $('#btnDemo').textContent = state.demo ? 'New demo' : 'Try demo';
+  document.body.classList.toggle('demo', !!state.demo);
+}
+function connLabel() {
+  return state.demo ? 'Demo (simulated)' : 'Connected';
 }
 
 // ---------------------------------------------------------------- knob widget
@@ -289,6 +295,7 @@ async function pickPatch(kind, i) {
       if (!state.connected) return;
       await selectUserPatch(i);
     } else {
+      loadSeq++; // cancel any user-memory load still in progress
       const src = kind === 'factory' ? state.factory[i] : state.file[i];
       const patch = Patch.fromTsl(src.params);
       if (state.patch?.image) for (const [k, v] of state.patch.image) if (!patch.image.has(k)) patch.image.set(k, v);
@@ -325,21 +332,30 @@ async function sendWholePatch() {
   for (const [addr, data] of state.patch.chunks()) { midi.dt1(addr, data); await sleep(15); }
 }
 
+// Each new patch pick bumps this; an older load that is still running then gives up,
+// so fast clicking through the list always ends on the last patch clicked.
+let loadSeq = 0;
+
 async function selectUserPatch(n) {
+  const my = ++loadSeq;
   setConn('busy', 'Loading…');
   midi.dt1(SETUP_PATCH_NO, [(n >> 7) & 127, n & 127]);
   await sleep(250);
+  if (my !== loadSeq) return;
   let patch = await readTemp();
+  if (my !== loadSeq) return;
   const expected = (state.userNames[n] || '').trim();
   if (expected && patch.name.trim() !== expected) {
     // The unit did not switch: read the memory directly and put it in the edit buffer.
     patch = await readUserPatchDirect(n);
+    if (my !== loadSeq) return;
     state.patch = patch;
     await sendWholePatch();
+    if (my !== loadSeq) return;
   }
   state.patch = patch;
   state.source = { kind: 'user', index: n, label: `GT-1 U${String(n + 1).padStart(2, '0')}` };
-  setConn('on', 'Connected');
+  setConn('on', connLabel());
   render();
 }
 
@@ -358,13 +374,28 @@ async function readUserNames() {
   renderLibrary();
 }
 
+// Demo mode: plug a simulated GT-1 into the same MIDI path the real one uses.
+function startDemo() {
+  if (!state.factory.length) { toast('Demo needs the factory presets from the setup step', true); return; }
+  state.demo = true;
+  const v = createVirtualGT1(state.factory);
+  midi.select(v.input, v.output);
+  connect();
+}
+function leaveDemo() {
+  if (!state.demo) return;
+  state.demo = false;
+  state.connected = false;
+  midi.select(null, null);
+}
+
 async function connect() {
-  if (!GT1Midi.supported()) {
+  if (!state.demo && !GT1Midi.supported()) {
     toast('This browser has no Web MIDI. Use Chrome or Edge.', true); return;
   }
   try {
     setConn('busy', 'Connecting…');
-    if (!midi.access) {
+    if (!midi.access && !state.demo) {
       await midi.init();
       midi.addEventListener('ports', fillPortSelects);
       midi.addEventListener('dt1', onDeviceData);
@@ -390,9 +421,9 @@ async function connect() {
     if (no) { const v = [...no.values()]; cur = v[0] * 128 + (v[1] || 0); }
     state.source = cur != null && cur < 99 ? { kind: 'user', index: cur, label: `GT-1 U${String(cur + 1).padStart(2, '0')}` }
       : cur != null ? { kind: 'device', label: `GT-1 P${String(cur - 98).padStart(2, '0')}` } : { kind: 'device', label: 'GT-1' };
-    setConn('on', 'Connected');
+    setConn('on', connLabel());
     render();
-    toast(`Connected to ${midi.output.name}`);
+    toast(state.demo ? 'Demo mode: a simulated GT-1 with 99 random patches. Nothing is sent to real hardware.' : `Connected to ${midi.output.name}`);
     readUserNames();
   } catch (e) {
     state.connected = false;
@@ -577,10 +608,12 @@ async function main() {
     renderLibrary();
   }));
   $('#libFilter').addEventListener('input', renderLibrary);
-  $('#btnConnect').addEventListener('click', connect);
+  $('#btnConnect').addEventListener('click', () => { leaveDemo(); connect(); });
+  $('#btnDemo').addEventListener('click', startDemo);
   $('#btnSettings').addEventListener('click', openSettings);
   $('#chkLog').addEventListener('change', (e) => { $('#midiLog').hidden = !e.target.checked; });
   $('#btnApplyPorts').addEventListener('click', () => {
+    leaveDemo();
     const { ins, outs } = midi.ports();
     midi.select(ins.find((p) => p.id === $('#selIn').value), outs.find((p) => p.id === $('#selOut').value));
     setTimeout(connect, 50);

@@ -41,6 +41,14 @@ The page must be opened as `http://localhost…` or `https://…`: browsers only
 The Docker container only serves files; it needs no USB access, because the browser on your computer
 talks to the GT-1.
 
+## Demo mode (no GT-1 needed)
+
+After the one-time setup, **Try demo** connects the editor to a simulated GT-1 that runs in the browser.
+Its 99 user memories are random variations of the factory presets (effect types swapped, blocks
+switched, knobs nudged), generated fresh each time from your imported data. Everything works as with
+the real unit: loading memories, editing, writing. Nothing reaches real hardware, and **New demo**
+rolls a new set. **Connect GT-1** leaves demo mode.
+
 ## What works
 
 - Connect / handshake (editor mode on, off when the tab closes)

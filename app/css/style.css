@@ -162,3 +162,8 @@ select.big, .ctrl select {
 .foot { padding: 6px 16px; font-size: 11px; color: #5d636b; border-top: 1px solid var(--line); background: #000; }
 .foot a, .linkbtn { color: var(--muted); }
 .linkbtn { background: none; border: 0; padding: 0; text-decoration: underline; cursor: pointer; font-size: 11px; }
+
+/* ---- demo mode ---- */
+body.demo .topbar { border-bottom-color: #f5c211; }
+body.demo #connDot.on { background: #f5c211; box-shadow: 0 0 8px #f5c211; }
+body.demo #connText { color: #f5c211; }
