@@ -32,6 +32,11 @@
     </div>
   </header>
 
+  <div id="demoBanner" class="demo-banner" hidden>
+    <span><b>Demo</b> · simulated GT-1 with made-up effects and random sample patches. The real editor uses your BOSS TONE STUDIO files.</span>
+    <button type="button" class="btn primary" id="btnDemoImport">Import BOSS TONE STUDIO files</button>
+  </div>
+
   <main class="layout">
     <aside class="library">
       <div class="tabs" role="tablist">
@@ -109,6 +114,11 @@
     <input id="setupFiles" type="file" accept=".zip,.exe,.swf,.tsl" multiple hidden>
     <input id="setupFolder" type="file" webkitdirectory hidden>
     <p id="setupStatus" class="setup-status" role="status" aria-live="polite"></p>
+    <div class="setup-demo" id="btnSetupDemoWrap">
+      <span class="muted">No files at hand?</span>
+      <button type="button" class="btn" id="btnSetupDemo">Try the demo first</button>
+      <span class="muted small">Made-up effects and random sample patches, no GT-1 needed.</span>
+    </div>
   </dialog>
 
   <footer class="foot">

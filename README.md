@@ -43,11 +43,17 @@ talks to the GT-1.
 
 ## Demo mode (no GT-1 needed)
 
-After the one-time setup, **Try demo** connects the editor to a simulated GT-1 that runs in the browser.
-Its 99 user memories are random variations of the factory presets (effect types swapped, blocks
-switched, knobs nudged), generated fresh each time from your imported data. Everything works as with
-the real unit: loading memories, editing, writing. Nothing reaches real hardware, and **New demo**
-rolls a new set. **Connect GT-1** leaves demo mode.
+The editor can be tried two ways without hardware. Both connect it to a simulated GT-1 running in the
+browser, where loading memories, editing and writing all work, and nothing reaches real hardware.
+**New demo** rolls a fresh set of patches.
+
+- **Before importing anything:** on the setup screen, choose **Try the demo first**. The demo then
+  uses a small made-up parameter set (generic effects like CLEAN, CRUNCH, PHASER) written for this
+  project (`app/js/demo-defs.js`) with randomly generated sample patches. Connecting a real GT-1 and
+  `.tsl` import/export are blocked in this mode, because the made-up addresses don't match a real
+  unit; the banner's **Import BOSS TONE STUDIO files** button switches to the real editor.
+- **After importing:** **Try demo** fills the simulated unit with random variations of the real
+  factory presets (effect types swapped, blocks switched, knobs nudged). **Connect GT-1** leaves it.
 
 ## What works
 

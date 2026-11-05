@@ -167,3 +167,7 @@ select.big, .ctrl select {
 body.demo .topbar { border-bottom-color: #f5c211; }
 body.demo #connDot.on { background: #f5c211; box-shadow: 0 0 8px #f5c211; }
 body.demo #connText { color: #f5c211; }
+.setup-demo { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; border-top: 1px solid var(--line); margin-top: 14px; padding-top: 14px; }
+.small { font-size: 12px; }
+.demo-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 8px 16px; background: #3a3000; color: #ffe58a; font-size: 13px; border-bottom: 1px solid #5c4d00; }
+.demo-banner[hidden] { display: none; }

@@ -1,7 +1,8 @@
 import { GT1Midi, addrToInt } from './midi.js';
 import * as store from './store.js';
 import { findRolandFiles, buildDefsFromSwf, parsePresets } from './extract.js';
-import { createVirtualGT1 } from './demo.js';
+import { createVirtualGT1, scratchPresets } from './demo.js';
+import { buildDemoDefs, demoParamDefs, DEMO_SWITCHES, DEMO_TYPE_KEYS } from './demo-defs.js';
 import { GT, setDefs, Patch, READ_BLOCKS, READ_SIZE, TEMP_BASE, chainOf, buildTsl, fromDisplay } from './model.js';
 import { BLOCKS, BLOCK_BY_CHAIN, typeList, typeName, subInfo, paramDefs, dropdownFor, stepperFor, stepperSplit, labelOf, isEnabled, pretty } from './blocks.js';
 
@@ -300,7 +301,8 @@ async function pickPatch(kind, i) {
       const patch = Patch.fromTsl(src.params);
       if (state.patch?.image) for (const [k, v] of state.patch.image) if (!patch.image.has(k)) patch.image.set(k, v);
       state.patch = patch;
-      state.source = { kind, index: i, label: kind === 'factory' ? `Factory P${String(i + 1).padStart(2, '0')}` : `File #${i + 1}` };
+      const no = String(i + 1).padStart(2, '0');
+      state.source = { kind, index: i, label: kind === 'factory' ? (state.demoOnly ? `Sample ${no}` : `Factory P${no}`) : `File #${i + 1}` };
       render();
       if (state.connected) await sendWholePatch();
       toast(state.connected ? `Loaded “${patch.name}” into the GT-1 (not stored yet)` : `Loaded “${patch.name}”`);
@@ -561,16 +563,22 @@ function runSetup({ cancelable = false } = {}) {
     const onCancel = (e) => { if (!cancelable) e.preventDefault(); };
     const pickFile = () => $('#setupFiles').click();
     const pickFolder = () => $('#setupFolder').click();
+    const tryDemo = () => { cleanup(); dlg.close(); resolve({ demo: true }); };
     const cleanup = () => {
       $('#setupFiles').removeEventListener('change', onFiles); $('#setupFolder').removeEventListener('change', onFiles);
       zone.removeEventListener('dragover', onOver); zone.removeEventListener('dragleave', onLeave); zone.removeEventListener('drop', onDrop);
       dlg.removeEventListener('cancel', onCancel);
       $('#btnPickFile').removeEventListener('click', pickFile); $('#btnPickFolder').removeEventListener('click', pickFolder);
+      $('#btnSetupDemo').removeEventListener('click', tryDemo);
     };
     $('#setupFiles').addEventListener('change', onFiles); $('#setupFolder').addEventListener('change', onFiles);
     zone.addEventListener('dragover', onOver); zone.addEventListener('dragleave', onLeave); zone.addEventListener('drop', onDrop);
     dlg.addEventListener('cancel', onCancel);
     $('#btnPickFile').addEventListener('click', pickFile); $('#btnPickFolder').addEventListener('click', pickFolder);
+    // Offered only on first run; from inside the demo the dialog is opened to import for real.
+    $('#btnSetupDemo').hidden = cancelable;
+    $('#btnSetupDemo').addEventListener('click', tryDemo);
+    dlg.addEventListener('close', cleanup, { once: true }); // also when dismissed with Esc
     dlg.showModal();
   });
 }
@@ -589,18 +597,45 @@ async function loadRolandData() {
       }
     } catch { /* not available */ }
   }
-  if (!defs) ({ defs, factory } = await runSetup());
+  if (!defs) {
+    const result = await runSetup();
+    if (result.demo) return enterDemoOnly();
+    ({ defs, factory } = result);
+  }
   setDefs(defs);
   state.factory = factory || [];
+}
+
+// Demo without any imported data: a made-up parameter set (demo-defs.js) and
+// randomly generated sample patches. Real hardware and .tsl files stay off limits,
+// because the made-up addresses do not match a real GT-1.
+function enterDemoOnly() {
+  setDefs(buildDemoDefs());
+  state.demoOnly = true;
+  const typeLists = Object.fromEntries(BLOCKS.filter((b) => b.type).map((b) => [b.type, typeList(b)]));
+  state.factory = scratchPresets(30, demoParamDefs(), DEMO_SWITCHES, DEMO_TYPE_KEYS, typeLists);
+  document.body.classList.add('demo-only');
+  $('#demoBanner').hidden = false;
+  document.querySelector('.tab[data-tab=factory]').textContent = 'Samples';
+}
+
+async function importForReal() {
+  await runSetup({ cancelable: true });
+  location.reload();
+}
+
+function blockedInDemo() {
+  if (!state.demoOnly) return false;
+  toast('The demo uses made-up effects. Import your BOSS TONE STUDIO files to use a real GT-1 or .tsl files.', true);
+  importForReal();
+  return true;
 }
 
 // ---------------------------------------------------------------- wire up
 async function main() {
   await loadRolandData();
-  $('#btnReimport').addEventListener('click', async () => {
-    await runSetup({ cancelable: true });
-    location.reload();
-  });
+  $('#btnReimport').addEventListener('click', importForReal);
+  $('#btnDemoImport').addEventListener('click', importForReal);
 
   document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => {
     state.tab = t.dataset.tab;
@@ -608,11 +643,12 @@ async function main() {
     renderLibrary();
   }));
   $('#libFilter').addEventListener('input', renderLibrary);
-  $('#btnConnect').addEventListener('click', () => { leaveDemo(); connect(); });
+  $('#btnConnect').addEventListener('click', () => { if (blockedInDemo()) return; leaveDemo(); connect(); });
   $('#btnDemo').addEventListener('click', startDemo);
   $('#btnSettings').addEventListener('click', openSettings);
   $('#chkLog').addEventListener('change', (e) => { $('#midiLog').hidden = !e.target.checked; });
   $('#btnApplyPorts').addEventListener('click', () => {
+    if (blockedInDemo()) return;
     leaveDemo();
     const { ins, outs } = midi.ports();
     midi.select(ins.find((p) => p.id === $('#selIn').value), outs.find((p) => p.id === $('#selOut').value));
@@ -625,9 +661,10 @@ async function main() {
     if (state.connected) for (let i = 1; i <= 16; i++) queueSend(`patch_name${i}`);
   });
 
-  $('#btnImport').addEventListener('click', () => $('#fileInput').click());
+  $('#btnImport').addEventListener('click', () => { if (!blockedInDemo()) $('#fileInput').click(); });
   $('#fileInput').addEventListener('change', (e) => { if (e.target.files[0]) importTsl(e.target.files[0]); e.target.value = ''; });
   $('#btnExport').addEventListener('click', () => {
+    if (blockedInDemo()) return;
     if (!state.patch) return toast('Nothing to export yet', true);
     const name = state.patch.name || 'patch';
     download(`${name.replace(/[^\w\- ]+/g, '_')}.tsl`, JSON.stringify(buildTsl([state.patch], name)));
@@ -658,13 +695,14 @@ async function main() {
   // Start with a factory sound so the editor is usable offline.
   if (state.factory.length) {
     state.patch = Patch.fromTsl(state.factory[0].params);
-    state.source = { kind: 'factory', index: 0, label: 'Factory P01' };
+    state.source = { kind: 'factory', index: 0, label: state.demoOnly ? 'Sample 01' : 'Factory P01' };
   }
-  if (!GT1Midi.supported()) $('#libHint').textContent = 'Web MIDI is not available in this browser — use Chrome or Edge to connect.';
+  if (!GT1Midi.supported() && !state.demoOnly) $('#libHint').textContent = 'Web MIDI is not available in this browser — use Chrome or Edge to connect.';
   state.tab = 'factory';
   document.querySelectorAll('.tab').forEach((x) => x.classList.toggle('active', x.dataset.tab === 'factory'));
   setConn('off', 'Offline');
   render();
+  if (state.demoOnly) startDemo();
 }
 
 main().catch((e) => { console.error(e); toast('Failed to start: ' + e.message, true); });

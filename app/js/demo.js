@@ -41,6 +41,34 @@ export function randomPatch(factory, i) {
   return p;
 }
 
+// ---- patches made from scratch (demo without any imported data) ------------------------
+// Chain order used for scratch patches; divider -> ch B -> mixer must stay in that order.
+const DEMO_CHAIN = [0, 15, 5, 11, 17, 2, 13, 18, 3, 19, 4, 6, 8, 7, 9, 10, 12, 14, 1, 16];
+const ON_CHANCE = { preamp_a_on_off: 0.95, preamp_b_on_off: 0.3, od_ds_on_off: 0.6, ns1_on_off: 0.8, reverb_on_off: 0.75, delay_on_off: 0.6 };
+const CATEGORIES = ['ROCK', 'BLUES', 'METAL', 'CLEAN', 'AMBIENT', 'FUNK'];
+
+// Knob values lean toward the middle of their range (average of two dice), like real sounds do.
+const centred = (lo, hi) => Math.round(lo + ((Math.random() + Math.random()) / 2) * (hi - lo));
+
+export function scratchPresets(count, paramDefs, switches, typeKeys, typeLists) {
+  const out = [];
+  for (let i = 0; i < count; i++) {
+    const params = {};
+    for (const d of Object.values(paramDefs)) {
+      const base = d.min < 0 ? d.min : 0;
+      const lo = Math.round((d.min - base) / d.step); const hi = Math.round((d.max - base) / d.step);
+      params[d.id] = hi - lo <= 4 ? randInt(lo, hi) : centred(lo, hi);
+    }
+    switches.forEach((k) => { params[k] = Math.random() < (ON_CHANCE[k] ?? 0.4) ? 1 : 0; });
+    typeKeys.forEach((k) => { const list = typeLists[k]; params[k] = list ? pick(list).val : 0; });
+    DEMO_CHAIN.forEach((v, j) => { params[`fx_chain_position${j + 1}`] = v; });
+    const name = demoName(i).replace(/ \d+$/, '');
+    [...name.padEnd(16, ' ')].forEach((c, j) => { params[`patch_name${j + 1}`] = c.charCodeAt(0); });
+    out.push({ name, category: pick(CATEGORIES), params });
+  }
+  return out;
+}
+
 // ---- simulated device -----------------------------------------------------------
 // Behaves like the GT-1 on the SysEx level: identity reply, RQ1 answers, DT1 writes,
 // patch select (00 01 00 00) and patch write (7F 00 01 04).
