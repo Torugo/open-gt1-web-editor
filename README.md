@@ -1,158 +1,65 @@
 # Open GT-1 Web Editor
 
-An unofficial rebuild of **BOSS TONE STUDIO for GT-1** (Adobe AIR) as a plain web app.
-It talks to the GT-1 over USB with **Web MIDI**, using the normal Roland GT-1 driver — no AIR, no plugins.
+An unofficial, open-source editor for the **BOSS GT-1** that runs in the browser. It replaces
+BOSS TONE STUDIO for GT-1 (Adobe AIR) and talks to the unit over USB with Web MIDI, using the normal
+GT-1 driver. Not affiliated with Roland / BOSS.
 
-**Open it:** <https://torugo.github.io/open-gt1-web-editor/> (Chrome or Edge)
+**Open it:** <https://torugo.github.io/open-gt1-web-editor/> (Chrome, Edge or another Chromium browser)
 
-Not affiliated with or endorsed by Roland / BOSS.
+## Getting started
 
-## First run: your own Roland files
+1. Install the GT-1 USB driver, plug in the GT-1 and close the old BOSS TONE STUDIO.
+2. Open the page. The first time, give it your own copy of BOSS TONE STUDIO for GT-1: the BOSS
+   download zip (e.g. `bts_gt1_w102.zip`), the installer `.exe` or the installed folder. The editor
+   reads the parameter list and factory presets from it, in the browser; nothing is uploaded and
+   this repository contains no Roland files.
+3. Click **Connect GT-1** and allow MIDI access.
 
-This repository contains **no Roland files**. On first use the editor asks for your own copy of
-BOSS TONE STUDIO for GT-1, and reads the parameter list and factory presets from it — in the browser,
-nothing is uploaded. It is stored in the browser, so you do this once. Any of these works:
+No GT-1 at hand? **Try the demo first** on the setup screen runs the editor against a simulated unit.
 
-- the BOSS download (e.g. `bts_gt1_w102.zip`) or the installer `.exe` inside it
-  (boss.info → GT-1 → Support → Updates & Drivers)
-- the installed folder, usually `C:\Program Files (x86)\BOSS TONE STUDIO for GT-1`
+## Features
 
-## Use
+- Live editing of every patch parameter: all chain blocks, types, sub types and master settings
+- Effect chain in a simple (IN → pedals → OUT) or full view, with on/off LEDs and drag to reorder
+- Hover hints with the real pedal or amp each effect models ([list](docs/effects.md))
+- User memories U01–U99: load, and **Write** the current sound into one
+- Factory presets, `.tsl` import and export
+- Follows changes made on the unit itself, including pedal and assign movements
+- Demo mode with a simulated GT-1 and random patches
 
-1. Install the Roland GT-1 USB driver (Windows / macOS) and plug in the GT-1.
-2. Close the old BOSS TONE STUDIO (only one program can use the GT-1 MIDI port at a time).
-3. Open the page, click **Connect GT-1**, allow MIDI access.
-
-Works in desktop **Chrome, Edge, Opera or other Chromium browsers** on Windows, macOS and Linux.
-Firefox has Web MIDI only behind an add-on prompt and Safari has none.
-On Linux the GT-1 must show up as a MIDI device (`aconnect -l`); this has not been tested yet.
+Not rebuilt yet: system settings, tuner, CTL/EXP assign editor, copy/move between memories.
+Tested on a real GT-1 with Chrome on Windows. Firefox and Safari lack the Web MIDI support it needs.
 
 ## Run it yourself
 
-With Docker, on any OS:
-
 ```
-docker compose up -d      # then open http://localhost:8123
-docker compose down       # stop it
+docker compose up -d      # http://localhost:8123
+docker compose down
 ```
 
-The page must be opened as `http://localhost…` or `https://…`: browsers only allow Web MIDI there.
-The Docker container only serves files; it needs no USB access, because the browser on your computer
-talks to the GT-1.
+Web MIDI only works on `localhost` or `https`. The container only serves files; your browser talks
+to the GT-1.
 
-## Demo mode (no GT-1 needed)
+## Development
 
-The editor can be tried two ways without hardware. Both connect it to a simulated GT-1 running in the
-browser, where loading memories, editing and writing all work, and nothing reaches real hardware.
-**New demo** rolls a fresh set of patches.
-
-- **Before importing anything:** on the setup screen, choose **Try the demo first**. The demo then
-  uses a small made-up parameter set (generic effects like CLEAN, CRUNCH, PHASER) written for this
-  project (`app/js/demo-defs.js`) with randomly generated sample patches. Connecting a real GT-1 and
-  `.tsl` import/export are blocked in this mode, because the made-up addresses don't match a real
-  unit; the banner's **Import BOSS TONE STUDIO files** button switches to the real editor.
-- **After importing:** **Try demo** fills the simulated unit with random variations of the real
-  factory presets (effect types swapped, blocks switched, knobs nudged). **Connect GT-1** leaves it.
-
-## What works
-
-- Connect / handshake (editor mode on, off when the tab closes)
-- Read the current sound, live editing of every patch parameter (all 20 chain blocks + master)
-- Effect type / sub type selection, parameters shown/hidden like the original
-- Effect chain: on/off LEDs, drag to reorder
-- GT-1 user memories U01–U99: list, load, **Write** the current sound into a memory
-- Factory presets, playable through the GT-1 without storing
-- Import / export `.tsl` liveset files (BOSS TONE STUDIO / BOSS Tone Central format)
-- Changes made on the unit's own panel are picked up
-
-Not rebuilt yet: system settings, tuner, CTL/EXP assign editor, copy/move between memories, online Tone Central.
-
-Tested on a real GT-1 with Chrome on Windows: connect, reading all memories, switching patches, live
-editing, writing to a memory, `.tsl` import and export.
-
-## Other BOSS devices (help wanted)
-
-Only the **GT-1** is supported. Other BOSS multi-effects are very likely possible, but nobody is
-working on them: this needs someone who owns the device. Contributions are welcome.
-
-**Why it looks feasible.** Most of this editor is not GT-1 specific: the Web MIDI / Roland SysEx
-transport, the patch model, `.tsl` files, the knob UI, the demo and the setup screen. BOSS also reused
-the same code across the family: the GT-1's BOSS TONE STUDIO still contains a GT-100 model ID, "quick
-setting" lists for the GT-100 and GT-001, and effect types the GT-1 does not have.
-
-**What a new device needs**
-
-1. **That device's own BOSS TONE STUDIO files.** Each model has its own memory layout, effect list
-   and chain, and the GT-1 files only hold fragments of the others. Like the GT-1, the data is read
-   from the user's own copy, so this repository stays free of Roland files.
-2. **The real unit to test with.** Several GT-1 bugs only showed up on hardware (the unit echoing
-   patch changes, assigns streaming ~30 updates a second); the simulated unit did not catch them.
-
-**Rough effort**
-
-| Device | Effort | Notes |
-|---|---|---|
-| GT-001 | Small | Desktop GT-1, same code family; the GT-1 app already references it |
-| GT-100 | Medium | Same family, more effects, two channels, own memory layout |
-| ME-80, ME-25 | Medium | Possibly the same platform; needs checking |
-| Katana, GT-1000 | Unknown | Newer editors, may be built differently; look at the files first |
-
-**How to add one**
-
-Everything device-specific lives in a *device profile*: `app/js/devices/gt1.js` is the GT-1's and the
-template for others. It holds the SysEx model ID, MIDI port names, memory map (edit buffer, user and
-preset memories, read/write chunks), editor commands, name and chain keys, the effect blocks and
-their rules, which BOSS TONE STUDIO files and classes to extract from, and the demo settings.
-The rest of the editor only asks the active profile, and the setup screen picks the profile from the
-files it is given.
-
-1. Copy `devices/gt1.js` to `devices/<device>.js` and add it to `DEVICES` in `app/js/device.js`.
-2. Run the extraction on that device's BOSS TONE STUDIO (`tools/build_defs.py` and `tools/disasm.py`
-   show how the GT-1 tables were found) and fill in the profile from what you find.
-3. Test every operation on the real unit, the same list as above.
-
-If you own one of these units and want to try, open an issue first so the work can be shared.
-
-## Layout
+```
+python -I tools/build_defs.py path/to/installed-program   # extract tables into app/data/ (git-ignored)
+python -m http.server 8123 --bind 127.0.0.1 -d app      # serve app/; uses app/data/ and skips setup
+```
 
 | Path | What |
 |---|---|
-| `app/` | The web app (static files, no build step) — deployed to GitHub Pages as-is |
-| `app/js/extract.js` | Reads the parameter table out of the user's BOSS TONE STUDIO files |
-| `app/js/device.js` | Device registry: which profile is active |
-| `app/js/devices/gt1.js` | GT-1 profile: memory map, commands, effect blocks, extraction settings |
-| `app/js/devices/gt1-demo.js` | Made-up GT-1 parameter set for the demo before import |
-| `app/js/midi.js` | Web MIDI + Roland SysEx (RQ1/DT1, checksum) |
-| `app/js/model.js` | Patch bytes ⇄ values ⇄ `.tsl` |
-| `app/js/blocks.js` | Effect block helpers: types, sub types, labels, visibility |
-| `app/js/app.js` | UI and setup screen |
-| `app/js/store.js` | Browser storage (IndexedDB) for the extracted data |
-| `tools/` | The same extraction in Python, for development |
-| `Dockerfile`, `compose.yaml`, `docker/` | nginx container serving `app/` |
-## Local development
+| `app/` | The web app: static files, no build step, deployed to GitHub Pages as-is |
+| `app/js/devices/gt1.js` | Everything GT-1 specific (memory map, commands, blocks, hints) |
+| `app/js/extract.js` | Reads the tables out of the user's BOSS TONE STUDIO |
+| `tools/` | The same extraction in Python, plus `make_effects_doc.py` |
+| `docs/` | [Protocol and commands](docs/protocol.md), [effects](docs/effects.md), [other devices](docs/devices.md) |
 
-```
-python -I tools/build_defs.py path/to/installed-program   # writes app/data/ (git-ignored)
-python -m http.server 8123 --bind 127.0.0.1 -d app      # serves app/ on http://localhost:8123
-```
-
-When `app/data/` exists locally the setup screen is skipped. `app/data/` is never committed, and the
-Pages workflow refuses to deploy if it is.
+Other BOSS units (GT-100, GT-001…) are possible but need an owner to test:
+see [docs/devices.md](docs/devices.md).
 
 ## License
 
-[GNU AGPL-3.0](LICENSE). You may use, change and share this editor. If you share a modified version,
-or run one as a website, you must make its source code available under the same license
-(for a website: keep a "Source" link like the one in the page footer). See [NOTICE](NOTICE).
-
-Roland's parameter data and presets are not part of this project or its license. BOSS, GT-1 and
-BOSS TONE STUDIO are trademarks of Roland Corporation, used here only to say which device this works with.
-
-## Protocol notes (GT-1)
-
-- SysEx: `F0 41 <dev> 00 00 00 30 <11=RQ1|12=DT1> <addr×4> <data | size×4> <checksum> F7`, device id from the identity reply (usually `10`).
-- Edit buffer at `60 00 xx xx`; user memory *n* (0–98) at `10 n xx xx`; presets at `20 n xx xx`.
-- Two-byte values are sent high byte first (value = hi×128 + lo).
-- Stored value = (display − min) ÷ step when min < 0, otherwise display ÷ step.
-- Editor mode: write `01` to `7F 00 00 01` on connect, `00` on exit. Store to memory: write `[hi, lo]` of the memory index to `7F 00 01 04`.
-- Current patch number: `00 01 00 00` (2 bytes).
+[GNU AGPL-3.0](LICENSE): use, change and share it; if you share a modified version or run one as a
+website, publish its source under the same license. See [NOTICE](NOTICE). Roland's data is not part
+of this project; BOSS, GT-1 and BOSS TONE STUDIO are trademarks of Roland Corporation.
