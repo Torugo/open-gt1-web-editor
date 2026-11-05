@@ -1,10 +1,10 @@
-import { GT1Midi, addrToInt } from './midi.js';
+import { RolandMidi, addrToInt } from './midi.js';
 import * as store from './store.js';
 import { findRolandFiles, buildDefsFromSwf, parsePresets } from './extract.js';
-import { createVirtualGT1, scratchPresets } from './demo.js';
-import { buildDemoDefs, demoParamDefs, DEMO_SWITCHES, DEMO_TYPE_KEYS } from './demo-defs.js';
-import { GT, setDefs, Patch, READ_BLOCKS, READ_SIZE, TEMP_BASE, chainOf, buildTsl, fromDisplay } from './model.js';
-import { BLOCKS, BLOCK_BY_CHAIN, typeList, typeName, subInfo, paramDefs, dropdownFor, stepperFor, stepperSplit, labelOf, isEnabled, pretty } from './blocks.js';
+import { createVirtualDevice, scratchPresets } from './demo.js';
+import { GT, setDefs, Patch, chainOf, buildTsl, fromDisplay } from './model.js';
+import { blockById, blockByChain, typeList, typeName, subInfo, paramDefs, dropdownFor, stepperFor, stepperSplit, labelOf, isEnabled, pretty } from './blocks.js';
+import { DEVICE, DEVICES, setDevice } from './device.js';
 
 const $ = (s) => document.querySelector(s);
 const el = (tag, attrs = {}, ...kids) => {
@@ -19,12 +19,16 @@ const el = (tag, attrs = {}, ...kids) => {
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const CMD_EDITOR_LEVEL = [0x7f, 0, 0, 0];
-const CMD_EDITOR_MODE = [0x7f, 0, 0, 1];
-const CMD_PATCH_WRITE = [0x7f, 0, 1, 4];
-const SETUP_PATCH_NO = [0, 1, 0, 0];
-const TEMP_START = addrToInt([...TEMP_BASE, 0, 0]);
-const TEMP_END = TEMP_START + 24 * 128;
+// Everything device-specific comes from the active profile (device.js, devices/*.js).
+const tempStart = () => addrToInt([...DEVICE.memory.temp, 0, 0]);
+const tempEnd = () => tempStart() + DEVICE.memory.patchSpan;
+const userSource = (n) => ({ kind: 'user', index: n, label: `${DEVICE.name} ${DEVICE.memory.userLabel(n)}` });
+// Source label for a patch number as the unit reports it (user memory or preset)
+function sourceForNumber(n) {
+  if (n == null) return { kind: 'device', label: DEVICE.name };
+  const at = DEVICE.memory.decodePatchNumber(n);
+  return at.kind === 'user' ? userSource(at.index) : { kind: 'device', label: `${DEVICE.name} ${DEVICE.memory.presetLabel(at.index)}` };
+}
 
 const state = {
   patch: null,
@@ -32,13 +36,13 @@ const state = {
   block: 'preA',
   connected: false,
   tab: 'user',
-  userNames: [],          // GT-1 user memories U01-U99
+  userNames: [],          // the unit's user memories
   factory: [],            // [{name, category, params}]
   file: [],               // patches from an imported .tsl
   fileName: '',
   activeKnob: null,
 };
-const midi = new GT1Midi();
+const midi = new RolandMidi();
 
 // ---------------------------------------------------------------- toast & log
 let toastTimer;
@@ -59,7 +63,7 @@ function setConn(kind, text) {
   $('#connDot').className = 'dot ' + kind;
   $('#connText').textContent = text;
   $('#btnWrite').disabled = !state.connected;
-  $('#btnConnect').textContent = state.connected && !state.demo ? 'Re-sync' : 'Connect GT-1';
+  $('#btnConnect').textContent = state.connected && !state.demo ? 'Re-sync' : `Connect ${DEVICE.name}`;
   $('#btnDemo').textContent = state.demo ? 'New demo' : 'Try demo';
   document.body.classList.toggle('demo', !!state.demo);
 }
@@ -199,8 +203,8 @@ function renderPanel() {
   panel.replaceChildren();
   liveControls.clear();
   const p = state.patch;
-  const b = BLOCKS.find((x) => x.id === state.block);
-  if (!p) { panel.append(el('div', { class: 'empty' }, 'Pick a patch on the left, or connect your GT-1.')); return; }
+  const b = blockById(state.block);
+  if (!p) { panel.append(el('div', { class: 'empty' }, `Pick a patch on the left, or connect your ${DEVICE.name}.`)); return; }
   if (!b || b.fixed) { panel.append(el('div', { class: 'empty' }, 'This block has no settings.')); return; }
 
   const head = el('div', { class: 'panel-head' },
@@ -237,7 +241,7 @@ function renderChain() {
   if (!p) return;
   const order = chainOf(p);
   order.forEach((val, idx) => {
-    const b = BLOCK_BY_CHAIN[val];
+    const b = blockByChain(val);
     if (!b) return;
     const on = b.sw ? p.get(b.sw) === 1 : true;
     const t = typeName(b, p);
@@ -259,8 +263,8 @@ function renderChain() {
     c.append(node);
   });
   // Master settings are not part of the chain order but edited the same way
-  const m = BLOCKS.find((b) => b.id === 'master');
-  c.append(el('div', { class: `blk master${state.block === 'master' ? ' sel' : ''}`, style: `--c:${m.color}`, title: 'Master settings',
+  const m = blockById('master');
+  if (m) c.append(el('div', { class: `blk master${state.block === 'master' ? ' sel' : ''}`, style: `--c:${m.color}`, title: 'Master settings',
     onclick: () => { state.block = 'master'; render(); } }, el('span', {}, 'MST'), el('span', { class: 't' }, 'MASTER')));
 }
 
@@ -269,11 +273,16 @@ function moveChain(from, to) {
   const order = chainOf(state.patch);
   const [item] = order.splice(from, 1);
   order.splice(from < to ? to - 1 : to, 0, item);
-  // Divider must come before Ch B start, which must come before the mixer
-  const iDiv = order.indexOf(17), iB = order.indexOf(18), iMix = order.indexOf(19);
-  if (!(iDiv < iB && iB < iMix)) { toast('Divider, channel B and mixer must stay in that order', true); return; }
-  order.forEach((v, i) => state.patch.set(`fx_chain_position${i + 1}`, v));
-  if (state.connected) midi.dt1([...TEMP_BASE, 0x07, 0x20], order);
+  // Some blocks must keep their relative order (GT-1: divider -> channel B -> mixer)
+  const fixedOrder = (DEVICE.patch.chainOrder || []).map((v) => order.indexOf(v));
+  if (fixedOrder.some((pos, i) => i > 0 && pos < fixedOrder[i - 1])) {
+    const names = DEVICE.patch.chainOrder.map((v) => blockByChain(v)?.name.toLowerCase()).join(', ');
+    toast(`These blocks must stay in this order: ${names}`, true); return;
+  }
+  const keys = DEVICE.patch.chainKeys;
+  order.forEach((v, i) => state.patch.set(keys[i], v));
+  // chain positions are consecutive bytes, so one message updates them all
+  if (state.connected) { const [b2, b3] = GT.addr[keys[0]]; midi.dt1([...DEVICE.memory.temp, b2, b3], order); }
   renderChain();
 }
 
@@ -285,11 +294,11 @@ function renderLibrary() {
   let items = [];
   let hint = '';
   if (state.tab === 'user') {
-    items = state.userNames.map((name, i) => ({ no: `U${String(i + 1).padStart(2, '0')}`, name, i }));
-    if (!state.connected) hint = 'Connect the GT-1 to see its user memories.';
+    items = state.userNames.map((name, i) => ({ no: DEVICE.memory.userLabel(i), name, i }));
+    if (!state.connected) hint = `Connect the ${DEVICE.name} to see its user memories.`;
     else if (!items.length) hint = 'Reading patch names…';
   } else if (state.tab === 'factory') {
-    items = state.factory.map((p, i) => ({ no: `P${String(i + 1).padStart(2, '0')}`, name: p.name, cat: p.category, i }));
+    items = state.factory.map((p, i) => ({ no: DEVICE.memory.presetLabel(i), name: p.name, cat: p.category, i }));
   } else {
     items = state.file.map((p, i) => ({ no: String(i + 1).padStart(2, '0'), name: p.name, cat: p.category, i }));
     hint = state.file.length ? state.fileName : 'Use “Import .tsl” to open a liveset file.';
@@ -315,10 +324,10 @@ async function pickPatch(kind, i) {
       if (state.patch?.image) for (const [k, v] of state.patch.image) if (!patch.image.has(k)) patch.image.set(k, v);
       state.patch = patch;
       const no = String(i + 1).padStart(2, '0');
-      state.source = { kind, index: i, label: kind === 'factory' ? (state.demoOnly ? `Sample ${no}` : `Factory P${no}`) : `File #${i + 1}` };
+      state.source = { kind, index: i, label: kind === 'factory' ? (state.demoOnly ? `Sample ${no}` : `Factory ${DEVICE.memory.presetLabel(i)}`) : `File #${i + 1}` };
       render();
       if (state.connected) await sendWholePatch();
-      toast(state.connected ? `Loaded “${patch.name}” into the GT-1 (not stored yet)` : `Loaded “${patch.name}”`);
+      toast(state.connected ? `Loaded “${patch.name}” into the ${DEVICE.name} (not stored yet)` : `Loaded “${patch.name}”`);
     }
   } catch (e) { toast(e.message, true); }
 }
@@ -326,18 +335,20 @@ async function pickPatch(kind, i) {
 // ---------------------------------------------------------------- device
 async function readTemp() {
   const image = new Map();
-  for (const [b2, b3] of READ_BLOCKS) {
-    const got = await midi.rq1([...TEMP_BASE, b2, b3], READ_SIZE);
-    got.forEach((v, a) => image.set(a - TEMP_START, v));
+  const { temp, readBlocks, readSize } = DEVICE.memory;
+  for (const [b2, b3] of readBlocks) {
+    const got = await midi.rq1([...temp, b2, b3], readSize);
+    got.forEach((v, a) => image.set(a - tempStart(), v));
   }
   return Patch.fromImage(image);
 }
 
 async function readUserPatchDirect(n) {
-  const base = addrToInt([0x10 + (n >> 7), n & 127, 0, 0]);
+  const { user, readBlocks, readSize } = DEVICE.memory;
+  const base = addrToInt([...user(n), 0, 0]);
   const image = new Map();
-  for (const [b2, b3] of READ_BLOCKS) {
-    const got = await midi.rq1([0x10 + (n >> 7), n & 127, b2, b3], READ_SIZE);
+  for (const [b2, b3] of readBlocks) {
+    const got = await midi.rq1([...user(n), b2, b3], readSize);
     got.forEach((v, a) => image.set(a - base, v));
   }
   return Patch.fromImage(image);
@@ -355,7 +366,7 @@ async function selectUserPatch(n) {
   const my = ++loadSeq;
   setConn('busy', 'Loading…');
   state.pendingSelect = n; // so the unit's echo of this change is not treated as a panel change
-  midi.dt1(SETUP_PATCH_NO, [(n >> 7) & 127, n & 127]);
+  midi.dt1(DEVICE.memory.currentPatch, [(n >> 7) & 127, n & 127]);
   await sleep(250);
   if (my !== loadSeq) return;
   let patch = await readTemp();
@@ -370,33 +381,45 @@ async function selectUserPatch(n) {
     if (my !== loadSeq) return;
   }
   state.patch = patch;
-  state.source = { kind: 'user', index: n, label: `GT-1 U${String(n + 1).padStart(2, '0')}` };
+  state.source = userSource(n);
   setConn('on', connLabel());
   render();
   // the unit's echo arrives within milliseconds; after that, changes to this patch on the panel count again
   setTimeout(() => { if (state.pendingSelect === n) state.pendingSelect = null; }, 1000);
 }
 
+// A newer run (e.g. Re-sync pressed while names are loading) stops the older one, so two runs
+// never write into the same list.
+let namesSeq = 0;
 async function readUserNames() {
-  state.userNames = [];
-  for (let n = 0; n < 99; n++) {
+  const my = ++namesSeq;
+  const names = [];
+  state.userNames = names;
+  const { user, userCount } = DEVICE.memory;
+  const nameLen = DEVICE.patch.nameKeys.length;
+  const [n2, n3] = GT.addr[DEVICE.patch.nameKeys[0]];
+  for (let n = 0; n < userCount; n++) {
+    let name;
     try {
-      const got = await midi.rq1([0x10 + (n >> 7), n & 127, 0, 0], 16, 1500);
-      const base = addrToInt([0x10 + (n >> 7), n & 127, 0, 0]);
+      const at = [...user(n), n2, n3];
+      const got = await midi.rq1(at, nameLen, 1500);
+      const base = addrToInt(at);
       let s = '';
-      for (let i = 0; i < 16; i++) s += String.fromCharCode(got.get(base + i) || 32);
-      state.userNames[n] = s.replace(/\s+$/, '');
-    } catch { state.userNames[n] = '?'; }
+      for (let i = 0; i < nameLen; i++) s += String.fromCharCode(got.get(base + i) || 32);
+      name = s.replace(/\s+$/, '');
+    } catch { name = '?'; }
+    if (my !== namesSeq) return; // a newer run took over
+    names[n] = name;
     if (state.tab === 'user' && n % 10 === 9) renderLibrary();
   }
   renderLibrary();
 }
 
-// Demo mode: plug a simulated GT-1 into the same MIDI path the real one uses.
+// Demo mode: plug a simulated unit into the same MIDI path the real one uses.
 function startDemo() {
   if (!state.factory.length) { toast('Demo needs the factory presets from the setup step', true); return; }
   state.demo = true;
-  const v = createVirtualGT1(state.factory);
+  const v = createVirtualDevice(state.factory);
   midi.select(v.input, v.output);
   connect();
 }
@@ -408,7 +431,7 @@ function leaveDemo() {
 }
 
 async function connect() {
-  if (!state.demo && !GT1Midi.supported()) {
+  if (!state.demo && !RolandMidi.supported()) {
     toast('This browser has no Web MIDI. Use Chrome or Edge.', true); return;
   }
   try {
@@ -421,27 +444,26 @@ async function connect() {
     if (!midi.output) {
       const g = midi.guessPorts();
       if (!g.input || !g.output) {
-        state.connected = false; setConn('off', 'No GT-1 found');
+        state.connected = false; setConn('off', `No ${DEVICE.name} found`);
         openSettings();
-        toast('GT-1 not found. Check the USB cable and driver, or pick the ports by hand.', true);
+        toast(`${DEVICE.name} not found. Check the USB cable and driver, or pick the ports by hand.`, true);
         return;
       }
       midi.select(g.input, g.output);
     }
     await midi.identity();
-    await midi.rq1(CMD_EDITOR_LEVEL, 1, 1500).catch(() => null);
-    midi.dt1(CMD_EDITOR_MODE, [1]);
+    await midi.rq1(DEVICE.commands.editorLevel, 1, 1500).catch(() => null);
+    midi.dt1(DEVICE.commands.editorMode, [1]);
     await sleep(50);
-    const no = await midi.rq1(SETUP_PATCH_NO, 2, 1500).catch(() => null);
+    const no = await midi.rq1(DEVICE.memory.currentPatch, 2, 1500).catch(() => null);
     state.patch = await readTemp();
     state.connected = true;
     let cur = null;
     if (no) { const v = [...no.values()]; cur = v[0] * 128 + (v[1] || 0); }
-    state.source = cur != null && cur < 99 ? { kind: 'user', index: cur, label: `GT-1 U${String(cur + 1).padStart(2, '0')}` }
-      : cur != null ? { kind: 'device', label: `GT-1 P${String(cur - 98).padStart(2, '0')}` } : { kind: 'device', label: 'GT-1' };
+    state.source = sourceForNumber(cur);
     setConn('on', connLabel());
     render();
-    toast(state.demo ? 'Demo mode: a simulated GT-1 with 99 random patches. Nothing is sent to real hardware.' : `Connected to ${midi.output.name}`);
+    toast(state.demo ? `Demo mode: a simulated ${DEVICE.name} with ${DEVICE.memory.userCount} random patches. Nothing is sent to real hardware.` : `Connected to ${midi.output.name}`);
     readUserNames();
   } catch (e) {
     state.connected = false;
@@ -454,8 +476,8 @@ async function connect() {
 let resyncTimer;
 function onDeviceData(e) {
   const { start, bytes } = e.detail;
-  if (start === addrToInt(SETUP_PATCH_NO)) {
-    // The GT-1 announces every patch change, including the ones this editor asked for.
+  if (start === addrToInt(DEVICE.memory.currentPatch)) {
+    // The unit announces every patch change, including the ones this editor asked for.
     const hi = bytes.get(start);
     const n = hi === undefined ? null : hi * 128 + (bytes.get(start + 1) ?? 0);
     if (n !== null && n === state.pendingSelect) return; // echo of our own selection
@@ -465,16 +487,14 @@ function onDeviceData(e) {
       const patch = await readTemp();
       if (my !== loadSeq) return;
       state.patch = patch;
-      state.source = n === null ? { kind: 'device', label: 'GT-1' }
-        : n < 99 ? { kind: 'user', index: n, label: `GT-1 U${String(n + 1).padStart(2, '0')}` }
-          : { kind: 'device', label: `GT-1 P${String(n - 98).padStart(2, '0')}` };
+      state.source = sourceForNumber(n);
       render();
     }, 200);
     return;
   }
-  if (start >= TEMP_START && start < TEMP_END && state.patch) {
+  if (start >= tempStart() && start < tempEnd() && state.patch) {
     const image = new Map(state.patch.image);
-    bytes.forEach((v, a) => image.set(a - TEMP_START, v));
+    bytes.forEach((v, a) => image.set(a - tempStart(), v));
     const before = state.patch.values;
     state.patch = Patch.fromImage(image);
     const changed = Object.keys(state.patch.values).filter((k) => state.patch.values[k] !== before[k]);
@@ -490,14 +510,14 @@ function onDeviceData(e) {
 let structuralKeys = null;
 function isStructural(key) {
   if (!structuralKeys) {
-    structuralKeys = new Set(['divider_mode', 'send_return_mode', 'preamp_a_sp_type', 'preamp_b_sp_type']);
-    for (const b of BLOCKS) {
+    structuralKeys = new Set([...DEVICE.patch.nameKeys, ...DEVICE.patch.chainKeys, ...(DEVICE.structural?.keys || [])]);
+    for (const b of DEVICE.blocks) {
       if (b.sw) structuralKeys.add(b.sw);
       if (b.type) structuralKeys.add(b.type);
       for (const [param] of Object.values(b.sub || {})) structuralKeys.add(param);
     }
   }
-  return structuralKeys.has(key) || key.startsWith('fx_chain_position') || key.startsWith('patch_name') || /_harmonist_hr\dharm$/.test(key);
+  return structuralKeys.has(key) || !!DEVICE.structural?.pattern?.test(key);
 }
 
 let redrawTimer = null;
@@ -523,7 +543,7 @@ function fillPortSelects() {
   fill($('#selOut'), outs, midi.output || midi.guessPorts().output);
 }
 async function openSettings() {
-  if (GT1Midi.supported() && !midi.access) {
+  if (RolandMidi.supported() && !midi.access) {
     try { await midi.init(); midi.addEventListener('ports', fillPortSelects); midi.addEventListener('dt1', onDeviceData); } catch (e) { toast(e.message, true); }
   }
   fillPortSelects();
@@ -542,7 +562,7 @@ function importTsl(file) {
     try {
       const j = JSON.parse(r.result);
       if (!Array.isArray(j.patchList)) throw new Error('Not a BOSS TONE STUDIO .tsl file');
-      if (j.device && j.device !== 'GT-1') toast(`This file is for ${j.device}; loading anyway`, true);
+      if (j.device && j.device !== DEVICE.tslDevice) toast(`This file is for ${j.device}; loading anyway`, true);
       state.file = j.patchList.filter((p) => p.params).map((p) => ({ name: p.name || nameFromParams(p.params), category: p.category || '', params: p.params }));
       state.fileName = file.name;
       state.tab = 'file';
@@ -553,7 +573,7 @@ function importTsl(file) {
   };
   r.readAsText(file);
 }
-const nameFromParams = (p) => Array.from({ length: 16 }, (_, i) => String.fromCharCode(p[`patch_name${i + 1}`] || 32)).join('').trim();
+const nameFromParams = (p) => DEVICE.patch.nameKeys.map((k) => String.fromCharCode(p[k] || 32)).join('').trim();
 
 // ---------------------------------------------------------------- render all
 function render() {
@@ -600,14 +620,18 @@ function runSetup({ cancelable = false } = {}) {
       if (busy || !files.length) return;
       busy = true;
       try {
-        say('Looking for the GT-1 data…');
+        say('Looking for BOSS TONE STUDIO data…');
         const found = await findRolandFiles(files, say);
-        if (!found.swf) throw new Error('Could not find BOSS_TONE_STUDIO_for_GT1.swf in what you picked. Try the BOSS download zip or the installed folder.');
-        say('Reading the parameter list…');
-        const defs = await buildDefsFromSwf(found.swf);
+        if (!found.device) {
+          const supported = DEVICES.map((d) => d.name).join(', ');
+          throw new Error(`Could not find a supported BOSS TONE STUDIO in what you picked (supported: ${supported}). Try the BOSS download zip or the installed folder.`);
+        }
+        say(`Reading the ${found.device.name} parameter list…`);
+        const defs = await buildDefsFromSwf(found.swf, found.device);
+        setDevice(found.device.id);
         const factory = found.tsl ? parsePresets(found.tsl) : [];
         const saved = (await store.set('defs', defs)) && (await store.set('factory', factory));
-        say(`Done: ${Object.keys(defs.addr).length} parameters, ${factory.length} factory presets.` + (saved ? '' : ' (Could not save in this browser; you will need to do this again next time.)'));
+        say(`Done: ${found.device.name}, ${Object.keys(defs.addr).length} parameters, ${factory.length} factory presets.` + (saved ? '' : ' (Could not save in this browser; you will need to do this again next time.)'));
         cleanup();
         dlg.close();
         resolve({ defs, factory });
@@ -651,7 +675,7 @@ async function loadRolandData() {
   if (!defs && local) {
     // Local development: files generated by tools/build_defs.py (never committed)
     try {
-      const r = await fetch('data/gt1.json');
+      const r = await fetch(`data/${DEVICE.id}.json`);
       if (r.ok) {
         defs = await r.json();
         const t = await fetch('data/factory_presets.tsl');
@@ -664,18 +688,20 @@ async function loadRolandData() {
     if (result.demo) return enterDemoOnly();
     ({ defs, factory } = result);
   }
+  setDevice(defs.device || 'gt1'); // tables saved before device profiles existed are GT-1's
   setDefs(defs);
   state.factory = factory || [];
 }
 
-// Demo without any imported data: a made-up parameter set (demo-defs.js) and
+// Demo without any imported data: the device profile's made-up parameter set and
 // randomly generated sample patches. Real hardware and .tsl files stay off limits,
-// because the made-up addresses do not match a real GT-1.
+// because the made-up addresses do not match a real unit.
 function enterDemoOnly() {
-  setDefs(buildDemoDefs());
+  const demo = DEVICE.demo;
+  setDefs(demo.buildTable(DEVICE));
   state.demoOnly = true;
-  const typeLists = Object.fromEntries(BLOCKS.filter((b) => b.type).map((b) => [b.type, typeList(b)]));
-  state.factory = scratchPresets(30, demoParamDefs(), DEMO_SWITCHES, DEMO_TYPE_KEYS, typeLists);
+  const typeLists = Object.fromEntries(DEVICE.blocks.filter((b) => b.type).map((b) => [b.type, typeList(b)]));
+  state.factory = scratchPresets(30, demo.paramDefs(), demo.switches, demo.typeKeys, typeLists);
   document.body.classList.add('demo-only');
   $('#demoBanner').hidden = false;
   document.querySelector('.tab[data-tab=factory]').textContent = 'Samples';
@@ -688,7 +714,7 @@ async function importForReal() {
 
 function blockedInDemo() {
   if (!state.demoOnly) return false;
-  toast('The demo uses made-up effects. Import your BOSS TONE STUDIO files to use a real GT-1 or .tsl files.', true);
+  toast(`The demo uses made-up effects. Import your BOSS TONE STUDIO files to use a real ${DEVICE.name} or .tsl files.`, true);
   importForReal();
   return true;
 }
@@ -697,6 +723,8 @@ function blockedInDemo() {
 async function main() {
   window.__appStarted = true; // checked by the load guard in index.html
   await loadRolandData();
+  // labels that name the device
+  document.querySelector('.tab[data-tab=user]').textContent = `${DEVICE.name} User`;
   $('#btnReimport').addEventListener('click', importForReal);
   $('#btnDemoImport').addEventListener('click', importForReal);
 
@@ -721,7 +749,7 @@ async function main() {
   $('#patchName').addEventListener('input', (e) => {
     if (!state.patch) return;
     state.patch.name = e.target.value;
-    if (state.connected) for (let i = 1; i <= 16; i++) queueSend(`patch_name${i}`);
+    if (state.connected) for (const k of DEVICE.patch.nameKeys) queueSend(k);
   });
 
   $('#btnImport').addEventListener('click', () => { if (!blockedInDemo()) $('#fileInput').click(); });
@@ -735,8 +763,8 @@ async function main() {
 
   $('#btnWrite').addEventListener('click', () => {
     const sel = $('#writeSlot');
-    sel.replaceChildren(...Array.from({ length: 99 }, (_, i) => el('option', { value: i, selected: state.source.kind === 'user' && state.source.index === i },
-      `U${String(i + 1).padStart(2, '0')}  ${state.userNames[i] ?? ''}`)));
+    sel.replaceChildren(...Array.from({ length: DEVICE.memory.userCount }, (_, i) => el('option', { value: i, selected: state.source.kind === 'user' && state.source.index === i },
+      `${DEVICE.memory.userLabel(i)}  ${state.userNames[i] ?? ''}`)));
     $('#writeDlg').returnValue = ''; // so Esc never reuses a previous "ok"
     $('#writeDlg').showModal();
   });
@@ -745,22 +773,22 @@ async function main() {
     const n = +$('#writeSlot').value;
     try {
       flushSend();
-      midi.dt1(CMD_PATCH_WRITE, [(n >> 7) & 127, n & 127]);
+      midi.dt1(DEVICE.commands.patchWrite, [(n >> 7) & 127, n & 127]);
       state.userNames[n] = state.patch.name;
-      state.source = { kind: 'user', index: n, label: `GT-1 U${String(n + 1).padStart(2, '0')}` };
+      state.source = userSource(n);
       render();
-      toast(`Written to U${String(n + 1).padStart(2, '0')}`);
+      toast(`Written to ${DEVICE.memory.userLabel(n)}`);
     } catch (e) { toast(e.message, true); }
   });
 
-  window.addEventListener('beforeunload', () => { if (state.connected) try { midi.dt1(CMD_EDITOR_MODE, [0]); } catch { /* closing */ } });
+  window.addEventListener('beforeunload', () => { if (state.connected) try { midi.dt1(DEVICE.commands.editorMode, [0]); } catch { /* closing */ } });
 
   // Start with a factory sound so the editor is usable offline.
   if (state.factory.length) {
     state.patch = Patch.fromTsl(state.factory[0].params);
-    state.source = { kind: 'factory', index: 0, label: state.demoOnly ? 'Sample 01' : 'Factory P01' };
+    state.source = { kind: 'factory', index: 0, label: state.demoOnly ? 'Sample 01' : `Factory ${DEVICE.memory.presetLabel(0)}` };
   }
-  if (!GT1Midi.supported() && !state.demoOnly) $('#libHint').textContent = 'Web MIDI is not available in this browser — use Chrome or Edge to connect.';
+  if (!RolandMidi.supported() && !state.demoOnly) $('#libHint').textContent = 'Web MIDI is not available in this browser — use Chrome or Edge to connect.';
   state.tab = 'factory';
   document.querySelectorAll('.tab').forEach((x) => x.classList.toggle('active', x.dataset.tab === 'factory'));
   setConn('off', 'Offline');
