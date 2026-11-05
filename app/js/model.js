@@ -3,10 +3,8 @@ import { addrToInt, intToAddr } from './midi.js';
 
 export let GT = null; // { addr: {key: [b2, b3, size]}, defs: {...} }
 
-export async function loadDefs() {
-  GT = await (await fetch('data/gt1.json')).json();
-  return GT;
-}
+// The table comes from the user's own copy of BOSS TONE STUDIO (see extract.js).
+export function setDefs(defs) { GT = defs; }
 
 // Temporary (edit buffer) patch lives at 60 00 xx xx.
 // User patch n (0-98) at 10 n xx xx, preset n at 20 n xx xx.

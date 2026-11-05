@@ -86,6 +86,36 @@
     </form>
   </dialog>
 
+  <dialog id="setupDlg" class="dlg wide setup">
+    <h3>One-time setup</h3>
+    <p>This editor doesn't include any Roland files. It reads the GT-1 parameter list and factory presets from
+      <b>your own copy of BOSS TONE STUDIO for GT-1</b>. The files stay on this computer: nothing is uploaded.</p>
+    <p class="muted">Use any one of these:</p>
+    <ul class="muted">
+      <li>The Windows download from BOSS, e.g. <code>bts_gt1_w102.zip</code>, or the installer <code>.exe</code> inside it.
+        It works on <b>any</b> computer (Mac and Linux too), since only its data is read.
+        Get it from boss.info → GT-1 → Support → Updates &amp; Drivers.</li>
+      <li>The installed program folder: on Windows usually <code>C:\Program Files (x86)\BOSS TONE STUDIO for GT-1</code>;
+        on a Mac, drop <code>BOSS TONE STUDIO for GT-1.app</code> from Applications here.</li>
+    </ul>
+    <div id="dropZone" class="drop">
+      <p>Drop the zip, .exe or folder here</p>
+      <div class="drop-btns">
+        <button type="button" class="btn primary" id="btnPickFile">Choose zip / .exe…</button>
+        <button type="button" class="btn" id="btnPickFolder">Choose installed folder…</button>
+      </div>
+    </div>
+    <input id="setupFiles" type="file" accept=".zip,.exe,.swf,.tsl" multiple hidden>
+    <input id="setupFolder" type="file" webkitdirectory hidden>
+    <p id="setupStatus" class="setup-status" role="status" aria-live="polite"></p>
+  </dialog>
+
+  <footer class="foot">
+    REA-BOSS is an unofficial editor, not affiliated with Roland/BOSS.
+    <a id="srcLink" href="https://github.com/Torugo/rea-boss" target="_blank" rel="noopener">Source</a>
+    · <button type="button" class="linkbtn" id="btnReimport">Re-import Roland data</button>
+  </footer>
+
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <script type="module" src="js/app.js"></script>

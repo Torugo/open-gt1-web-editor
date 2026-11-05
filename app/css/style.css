@@ -148,3 +148,17 @@ select.big, .ctrl select {
   .grid2 { grid-template-columns: 1fr; }
 }
 .blk.master { margin-left: auto; border-top-color: var(--accent); }
+
+/* ---- setup ---- */
+.setup p { margin: 8px 0; }
+.setup ul { margin: 4px 0 12px; padding-left: 20px; }
+.setup code { background: #000; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+.drop { border: 2px dashed #3a3f46; border-radius: 10px; padding: 18px; text-align: center; margin-top: 10px; transition: border-color .15s, background .15s; }
+.drop.over { border-color: var(--accent2); background: #2a1214; }
+.drop p { margin: 0 0 12px; color: var(--muted); }
+.drop-btns { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+.setup-status { min-height: 1.4em; font-size: 13px; }
+.setup-status.err { color: var(--accent2); }
+.foot { padding: 6px 16px; font-size: 11px; color: #5d636b; border-top: 1px solid var(--line); background: #000; }
+.foot a, .linkbtn { color: var(--muted); }
+.linkbtn { background: none; border: 0; padding: 0; text-decoration: underline; cursor: pointer; font-size: 11px; }
