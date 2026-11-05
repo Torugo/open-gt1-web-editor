@@ -1,53 +1,83 @@
 # REA-BOSS — GT-1 editor in the browser
 
-A rebuild of **BOSS TONE STUDIO for GT-1** (Adobe AIR) as a plain web app.
+An unofficial rebuild of **BOSS TONE STUDIO for GT-1** (Adobe AIR) as a plain web app.
 It talks to the GT-1 over USB with **Web MIDI**, using the normal Roland GT-1 driver — no AIR, no plugins.
 
-## Run it
+**Open it:** <https://torugo.github.io/rea-boss/> (Chrome or Edge)
 
-1. Install the Roland GT-1 USB driver (same one the old app needed) and plug in the GT-1.
-2. Double-click `start.bat` (needs Python). It serves `app/` on <http://localhost:8123> and opens it.
-3. Use **Chrome or Edge** (Firefox/Safari lack proper Web MIDI SysEx). Click **Connect GT-1** and allow MIDI access.
+Not affiliated with or endorsed by Roland / BOSS.
 
-Close the old BOSS TONE STUDIO first: on Windows only one program can open the GT-1 MIDI port at a time.
+## First run: your own Roland files
+
+This repository contains **no Roland files**. On first use the editor asks for your own copy of
+BOSS TONE STUDIO for GT-1, and reads the parameter list and factory presets from it — in the browser,
+nothing is uploaded. It is stored in the browser, so you do this once. Any of these works:
+
+- the BOSS download (e.g. `bts_gt1_w102.zip`) or the installer `.exe` inside it
+  (boss.info → GT-1 → Support → Updates & Drivers)
+- the installed folder, usually `C:\Program Files (x86)\BOSS TONE STUDIO for GT-1`
+
+## Use
+
+1. Install the Roland GT-1 USB driver (Windows / macOS) and plug in the GT-1.
+2. Close the old BOSS TONE STUDIO (only one program can use the GT-1 MIDI port at a time).
+3. Open the page, click **Connect GT-1**, allow MIDI access.
+
+Works in desktop **Chrome, Edge, Opera or other Chromium browsers** on Windows, macOS and Linux.
+Firefox has Web MIDI only behind an add-on prompt and Safari has none.
+On Linux the GT-1 must show up as a MIDI device (`aconnect -l`); this has not been tested yet.
+
+## Run it yourself
+
+Any of these serves the same static page on <http://localhost:8123>:
+
+| How | Command |
+|---|---|
+| Docker | `docker compose up -d` (stop with `docker compose down`) |
+| Windows | double-click `start.bat` (needs Python) |
+| macOS / Linux | `./start.sh` (needs Python 3) |
+
+The page must be opened as `http://localhost…` or `https://…`: browsers only allow Web MIDI there.
+The Docker container only serves files; it needs no USB access, because the browser on your computer
+talks to the GT-1.
 
 ## What works
 
 - Connect / handshake (editor mode on, off when the tab closes)
 - Read the current sound, live editing of every patch parameter (all 20 chain blocks + master)
-- Effect type / sub type selection, parameters shown/hidden exactly like the original
+- Effect type / sub type selection, parameters shown/hidden like the original
 - Effect chain: on/off LEDs, drag to reorder
-- GT-1 user memories U01–U99: list, load, **Write** current sound into a memory
-- 99 factory presets (from the original app's data), playable through the GT-1 without storing
-- Import / export `.tsl` liveset files (compatible with BOSS TONE STUDIO / BOSS Tone Central)
+- GT-1 user memories U01–U99: list, load, **Write** the current sound into a memory
+- Factory presets, playable through the GT-1 without storing
+- Import / export `.tsl` liveset files (BOSS TONE STUDIO / BOSS Tone Central format)
 - Changes made on the unit's own panel are picked up
 
-Not rebuilt (yet): system settings, tuner, CTL/EXP assign editor, librarian copy/move between memories,
-online Tone Central (Roland's servers for the old app are gone).
+Not rebuilt yet: system settings, tuner, CTL/EXP assign editor, copy/move between memories, online Tone Central.
 
 ## Layout
 
 | Path | What |
 |---|---|
-| `app/` | The web app (static files, no build step) |
-| `app/data/gt1.json` | Parameter table: addresses, ranges, labels, visibility rules — generated |
-| `app/data/factory_presets.tsl` | Factory presets, copied from the original install |
+| `app/` | The web app (static files, no build step) — deployed to GitHub Pages as-is |
+| `app/js/extract.js` | Reads the parameter table out of the user's BOSS TONE STUDIO files |
 | `app/js/midi.js` | Web MIDI + Roland SysEx (RQ1/DT1, checksum) |
 | `app/js/model.js` | Patch bytes ⇄ values ⇄ `.tsl` |
 | `app/js/blocks.js` | Effect blocks, types, sub types, labels |
-| `app/js/app.js` | UI |
-| `tools/` | Extraction pipeline from the original app (`build_defs.py`) |
-| `backup/` | Untouched copy of the installer zip and installed program |
+| `app/js/app.js` | UI and setup screen |
+| `app/js/store.js` | Browser storage (IndexedDB) for the extracted data |
+| `tools/` | The same extraction in Python, for development |
+| `Dockerfile`, `compose.yaml`, `docker/` | nginx container serving `app/` |
+| `start.bat`, `start.sh` | Local launchers (Windows / macOS, Linux) |
 
-## Regenerating the parameter table
+## Local development
 
 ```
-python -I tools/build_defs.py
+python -I tools/build_defs.py path/to/installed-program   # writes app/data/ (git-ignored)
+./start.sh   # or start.bat — serves app/ on http://localhost:8123
 ```
 
-This decompresses `backup/installed-program/BOSS_TONE_STUDIO_for_GT1.swf`, disassembles its ActionScript
-(`tools/disasm.py`), replays the `ParameterDefinitionGT` table (`tools/evalcinit.py`) and reads byte offsets
-from `TemporaryParams.setData`, then writes `app/data/gt1.json`.
+When `app/data/` exists locally the setup screen is skipped. `app/data/` is never committed, and the
+Pages workflow refuses to deploy if it is.
 
 ## Protocol notes (GT-1)
 
@@ -57,5 +87,3 @@ from `TemporaryParams.setData`, then writes `app/data/gt1.json`.
 - Stored value = (display − min) ÷ step when min < 0, otherwise display ÷ step.
 - Editor mode: write `01` to `7F 00 00 01` on connect, `00` on exit. Store to memory: write `[hi, lo]` of the memory index to `7F 00 01 04`.
 - Current patch number: `00 01 00 00` (2 bytes).
-
-The factory preset data and parameter names come from Roland's software; keep that in mind before publishing this publicly.
