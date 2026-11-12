@@ -17,6 +17,9 @@ export function checksum(bytes) {
 // 4-byte 7-bit address <-> integer
 export const addrToInt = (a) => ((a[0] * 128 + a[1]) * 128 + a[2]) * 128 + a[3];
 export const intToAddr = (n) => [(n >> 21) & 127, (n >> 14) & 127, (n >> 7) & 127, n & 127];
+// 14-bit value <-> two 7-bit bytes (high, low): patch numbers and two-byte parameters
+export const to14 = (n) => [(n >> 7) & 127, n & 127];
+export const from14 = (hi, lo = 0) => hi * 128 + lo;
 
 export class RolandMidi extends EventTarget {
   constructor() {
@@ -25,7 +28,7 @@ export class RolandMidi extends EventTarget {
     this.input = null;
     this.output = null;
     this.deviceId = 0x10;
-    this.pending = []; // {start, end, resolve, timer, received}
+    this.pending = []; // requests waiting for data: {start, end, got, resolve, reject, timer, idle}
     this.log = () => {};
   }
 
@@ -87,7 +90,12 @@ export class RolandMidi extends EventTarget {
         else reject(new Error(`Timed out waiting for the ${DEVICE.name} to reply`));
       }, timeoutMs);
       this.pending.push(req);
-      this.sendRaw(this.build(RQ1, addr, intToAddr7Size(size)));
+      // the size is written like an address: a 4-byte 7-bit number
+      try { this.sendRaw(this.build(RQ1, addr, intToAddr(size))); } catch (e) {
+        clearTimeout(req.timer);
+        this.pending = this.pending.filter((p) => p !== req);
+        reject(e);
+      }
     });
   }
 
@@ -98,10 +106,6 @@ export class RolandMidi extends EventTarget {
       this.addEventListener('identity', h);
       this.sendRaw([0xf0, 0x7e, 0x7f, 0x06, 0x01, 0xf7]);
     });
-  }
-
-  programChange(channel, program) {
-    this.sendRaw([0xc0 | (channel & 15), program & 127]);
   }
 
   onMessage(data) {
@@ -116,10 +120,7 @@ export class RolandMidi extends EventTarget {
     // Model IDs differ in length between BOSS units, so the command byte position depends on it.
     const model = DEVICE.modelId;
     const cmdAt = 3 + model.length;
-    if (d[0] !== 0xf0 || d[1] !== ROLAND || d[cmdAt] !== DT1) {
-      if ((d[0] & 0xf0) === 0xc0) this.dispatchEvent(new CustomEvent('program', { detail: d[1] }));
-      return;
-    }
+    if (d[0] !== 0xf0 || d[1] !== ROLAND || d[cmdAt] !== DT1) return;
     if (model.some((b, i) => d[3 + i] !== b)) return;
     const addr = d.slice(cmdAt + 1, cmdAt + 5);
     const payload = d.slice(cmdAt + 5, d.length - 2);
@@ -144,9 +145,4 @@ export class RolandMidi extends EventTarget {
     // Unsolicited DT1: the user turned a knob or changed patch on the unit.
     if (!consumed) this.dispatchEvent(new CustomEvent('dt1', { detail: { start, bytes: map } }));
   }
-}
-
-// Sizes in RQ1 are written as 7-bit 4-byte numbers.
-function intToAddr7Size(n) {
-  return intToAddr(n);
 }

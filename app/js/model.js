@@ -1,6 +1,6 @@
 // Patch model: parameter table, value conversion, patch <-> bytes / .tsl.
 // Device-neutral: memory layout and key names come from the active profile (device.js).
-import { addrToInt, intToAddr } from './midi.js';
+import { addrToInt, intToAddr, to14, from14 } from './midi.js';
 import { DEVICE } from './device.js';
 
 export let GT = null; // { addr: {key: [b2, b3, size]}, defs: {...} }
@@ -20,7 +20,7 @@ export class Patch {
     for (const [key, [b2, b3, size]] of Object.entries(GT.addr)) {
       const o = b2 * 128 + b3;
       if (!p.image.has(o)) continue;
-      p.values[key] = size === 2 ? p.image.get(o) * 128 + (p.image.get(o + 1) || 0) : p.image.get(o);
+      p.values[key] = size === 2 ? from14(p.image.get(o), p.image.get(o + 1)) : p.image.get(o);
     }
     return p;
   }
@@ -34,13 +34,6 @@ export class Patch {
     return p;
   }
 
-  clone() {
-    const p = new Patch();
-    p.values = { ...this.values };
-    p.image = new Map(this.image);
-    return p;
-  }
-
   syncImage() {
     for (const [key, v] of Object.entries(this.values)) this.writeImage(key, v);
   }
@@ -48,7 +41,7 @@ export class Patch {
   writeImage(key, v) {
     const [b2, b3, size] = GT.addr[key];
     const o = b2 * 128 + b3;
-    if (size === 2) { this.image.set(o, (v >> 7) & 127); this.image.set(o + 1, v & 127); }
+    if (size === 2) to14(v).forEach((b, i) => this.image.set(o + i, b));
     else this.image.set(o, v & 127);
   }
 
@@ -63,7 +56,7 @@ export class Patch {
   paramMessage(key) {
     const [b2, b3, size] = GT.addr[key];
     const v = this.get(key);
-    const data = size === 2 ? [(v >> 7) & 127, v & 127] : [v & 127];
+    const data = size === 2 ? to14(v) : [v & 127];
     return [[...DEVICE.memory.temp, b2, b3], data];
   }
 
@@ -96,7 +89,7 @@ export class Patch {
     const out = { ...this.values };
     // .tsl files also carry split _h/_l bytes for two-byte values
     for (const [key, [, , size]] of Object.entries(GT.addr)) {
-      if (size === 2) { out[key + '_h'] = (this.get(key) >> 7) & 127; out[key + '_l'] = this.get(key) & 127; }
+      if (size === 2) [out[key + '_h'], out[key + '_l']] = to14(this.get(key));
     }
     out.chainParams = { positionList: chainOf(this) };
     return out;
