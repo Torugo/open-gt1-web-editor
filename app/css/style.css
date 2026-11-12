@@ -64,7 +64,7 @@ button, input, select { font: inherit; color: inherit; }
 #patchName {
   /* looks like the unit's backlit LCD */
   background: var(--lcd-bg); border: 2px solid #59647a; border-radius: 4px;
-  font-family: ui-monospace, Consolas, monospace; font-size: 20px; font-weight: 700; letter-spacing: .06em;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 20px; font-weight: 700; letter-spacing: .06em;
   padding: 3px 10px; width: calc(17.5ch + 1em + 24px); max-width: 100%; text-transform: none; color: var(--lcd-fg);
   box-shadow: 0 0 14px rgba(170, 200, 255, .28);
 }
@@ -94,7 +94,7 @@ button, input, select { font: inherit; color: inherit; }
 .patch-list { list-style: none; margin: 0; padding: 0 4px 8px; overflow: auto; flex: 1; }
 .patch-list li {
   display: flex; gap: 8px; padding: 5px 8px; border-radius: 6px; cursor: pointer;
-  font-family: ui-monospace, Consolas, monospace; font-size: 13px;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 13px;
 }
 .patch-list li:hover { background: var(--panel2); }
 .patch-list li.active { background: var(--sel-bg); color: #fff; box-shadow: inset 3px 0 0 var(--accent); }
@@ -144,7 +144,7 @@ select.big, .ctrl select {
 .params { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 18px 10px; }
 .ctrl { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; }
 .ctrl .name { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; min-height: 2.6em; display: flex; align-items: flex-end; justify-content: center; }
-.ctrl .val { font-family: ui-monospace, Consolas, monospace; font-size: 13px; min-height: 1.3em; }
+.ctrl .val { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 13px; min-height: 1.3em; }
 .ctrl select { min-width: 0; width: 100%; max-width: 160px; }
 .ctrl.wide { grid-column: span 2; }
 .knob { width: 60px; height: 60px; cursor: ns-resize; touch-action: none; outline: none; border-radius: 50%; }

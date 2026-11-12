@@ -28,7 +28,9 @@ No GT-1 at hand? **Try the demo first** on the setup screen runs the editor agai
 - Demo mode with a simulated GT-1 and random patches
 
 Not rebuilt yet: system settings, tuner, CTL/EXP assign editor, copy/move between memories.
-Tested on a real GT-1 with Chrome on Windows. Firefox and Safari lack the Web MIDI support it needs.
+Tested on a real GT-1 with Chrome on Windows. On macOS the editor and its demo mode are checked in
+Chromium, but nobody has tried a real GT-1 there yet: reports are welcome. Firefox and Safari lack
+the Web MIDI support it needs.
 
 ## Run it yourself
 
@@ -47,11 +49,15 @@ python -I tools/build_defs.py path/to/installed-program   # extract tables into 
 python -m http.server 8123 --bind 127.0.0.1 -d app      # serve app/; uses app/data/ and skips setup
 ```
 
+On macOS and most Linux systems the command is `python3`.
+
 | Path | What |
 |---|---|
 | `app/` | The web app: static files, no build step, deployed to GitHub Pages as-is |
 | `app/js/devices/gt1.js` | Everything GT-1 specific (memory map, commands, blocks, hints) |
-| `app/js/extract.js` | Reads the tables out of the user's BOSS TONE STUDIO |
+| `app/js/app.js` | The editor UI: chain, parameter panel, patch library, connection |
+| `app/js/midi.js`, `model.js`, `blocks.js` | Roland SysEx transport, patch model, block and parameter rules |
+| `app/js/extract.js`, `setup.js` | Reads the tables out of the user's BOSS TONE STUDIO; the setup dialog |
 | `tools/` | The same extraction in Python, plus `make_effects_doc.py` |
 | `docs/` | [Protocol and commands](docs/protocol.md), [effects](docs/effects.md), [other devices](docs/devices.md) |
 

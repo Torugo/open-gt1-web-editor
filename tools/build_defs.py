@@ -5,12 +5,13 @@ Pipeline:
   2. disassemble its ActionScript bytecode (disasm.py)
   3. replay the ParameterDefinitionGT static initializer -> parameter table (evalcinit.py)
   4. read TemporaryParams.setData -> byte offset of every patch parameter
-  5. write one JSON file the web app loads
+  5. write one JSON file the web app loads, and copy the factory presets next to it
 
-Usage:  python -I tools/build_defs.py [path-to-installed-program]
-Default path: backup/installed-program (inside this repo).
+Usage:  python3 -I tools/build_defs.py [path-to-installed-program]
+The path is the installed program folder (on a Mac: "BOSS TONE STUDIO for GT-1.app");
+it is searched recursively. Default: backup/installed-program (inside this repo).
 """
-import json, os, re, subprocess, sys, zlib
+import json, os, re, shutil, subprocess, sys, zlib
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, "backup", "installed-program")
@@ -18,9 +19,19 @@ BUILD = os.path.join(ROOT, "tools", "build")
 OUT = os.path.join(ROOT, "app", "data", "gt1.json")
 TOOLS = os.path.join(ROOT, "tools")
 os.makedirs(BUILD, exist_ok=True)
+os.makedirs(os.path.dirname(OUT), exist_ok=True)
+
+def find(name):
+    """Path of a file anywhere under SRC (the files sit deeper inside a Mac .app bundle)."""
+    for folder, _, files in os.walk(SRC):
+        for f in files:
+            if f.lower() == name.lower(): return os.path.join(folder, f)
+    return None
 
 # 1. decompress SWF
-raw = open(os.path.join(SRC, "BOSS_TONE_STUDIO_for_GT1.swf"), "rb").read()
+swf = find("BOSS_TONE_STUDIO_for_GT1.swf")
+if not swf: sys.exit("BOSS_TONE_STUDIO_for_GT1.swf not found under " + SRC)
+raw = open(swf, "rb").read()
 body = zlib.decompress(raw[8:]) if raw[:3] == b"CWS" else raw[8:]
 swf_body = os.path.join(BUILD, "swf_body.bin")
 open(swf_body, "wb").write(body)
@@ -79,6 +90,14 @@ for key, off in offsets.items():
     else:
         addr[key] = [off >> 8, off & 0xFF, 1]
 
-out = {"source": "BOSS TONE STUDIO for GT-1 v1.0.2 (extracted)", "addr": addr, "defs": defs}
+out = {"source": "BOSS TONE STUDIO for GT-1 v1.0.2 (extracted)", "device": "gt1", "addr": addr, "defs": defs}
 json.dump(out, open(OUT, "w", encoding="utf-8"), separators=(",", ":"), ensure_ascii=False)
 print("wrote", OUT, "params:", len(addr), "def tables:", len(defs))
+
+# 5b. factory presets, which the app loads from app/data/ on localhost
+presets = find("gt_preset_patches.tsl")
+if presets:
+    shutil.copyfile(presets, os.path.join(os.path.dirname(OUT), "factory_presets.tsl"))
+    print("copied factory presets")
+else:
+    print("no gt_preset_patches.tsl found: the Factory tab will be empty")

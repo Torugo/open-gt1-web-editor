@@ -1,23 +1,13 @@
-import { RolandMidi, addrToInt } from './midi.js';
+import { RolandMidi, addrToInt, to14, from14 } from './midi.js';
 import * as store from './store.js';
-import { findRolandFiles, buildDefsFromSwf, parsePresets } from './extract.js';
+import { parsePresets } from './extract.js';
 import { createVirtualDevice, scratchPresets } from './demo.js';
 import { GT, setDefs, Patch, chainOf, buildTsl, fromDisplay } from './model.js';
 import { blockById, blockByChain, typeList, typeName, subInfo, typeHint, subHint, paramDefs, dropdownFor, stepperFor, stepperSplit, labelOf, isEnabled, pretty } from './blocks.js';
-import { DEVICE, DEVICES, setDevice } from './device.js';
-
-const $ = (s) => document.querySelector(s);
-const el = (tag, attrs = {}, ...kids) => {
-  const n = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (k === 'class') n.className = v;
-    else if (k.startsWith('on')) n.addEventListener(k.slice(2), v);
-    else if (v !== undefined && v !== null && v !== false) n.setAttribute(k, v === true ? '' : v);
-  }
-  for (const k of kids.flat()) if (k != null) n.append(k.nodeType ? k : document.createTextNode(k));
-  return n;
-};
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+import { DEVICE, setDevice, pad2 } from './device.js';
+import { $, $$, el, sleep, toast } from './dom.js';
+import { knob, isDragging, anyKnobDragging } from './knob.js';
+import { runSetup } from './setup.js';
 
 // Everything device-specific comes from the active profile (device.js, devices/*.js).
 const tempStart = () => addrToInt([...DEVICE.memory.temp, 0, 0]);
@@ -29,28 +19,26 @@ function sourceForNumber(n) {
   const at = DEVICE.memory.decodePatchNumber(n);
   return at.kind === 'user' ? userSource(at.index) : { kind: 'device', label: `${DEVICE.name} ${DEVICE.memory.presetLabel(at.index)}` };
 }
+const factorySource = (i) => ({ kind: 'factory', index: i, label: state.demoOnly ? `Sample ${pad2(i + 1)}` : `Factory ${DEVICE.memory.presetLabel(i)}` });
 
 const state = {
   patch: null,
   source: { kind: 'none', label: '—' },
-  block: 'preA',
+  block: 'preA',            // id of the block shown in the panel
   connected: false,
+  demo: false,              // talking to the simulated unit
+  demoOnly: false,          // no Roland data imported: made-up parameter set, real hardware off limits
+  pendingSelect: null,      // user memory we just asked the unit to switch to
+  chainView: 'simple',      // 'simple' | 'full'
   tab: 'user',
   userNames: [],          // the unit's user memories
   factory: [],            // [{name, category, params}]
   file: [],               // patches from an imported .tsl
   fileName: '',
-  activeKnob: null,
 };
 const midi = new RolandMidi();
 
-// ---------------------------------------------------------------- toast & log
-let toastTimer;
-function toast(msg, err = false) {
-  const t = $('#toast');
-  t.textContent = msg; t.className = 'toast show' + (err ? ' err' : '');
-  clearTimeout(toastTimer); toastTimer = setTimeout(() => (t.className = 'toast'), err ? 6000 : 2500);
-}
+// ---------------------------------------------------------------- log & connection status
 const logLines = [];
 midi.log = (dir, bytes) => {
   if (!$('#chkLog').checked) return;
@@ -71,65 +59,6 @@ function connLabel() {
   return state.demo ? 'Demo (simulated)' : 'Connected';
 }
 
-// ---------------------------------------------------------------- knob widget
-function knob({ value, min, max, onInput, label }) {
-  const NS = 'http://www.w3.org/2000/svg';
-  const svg = document.createElementNS(NS, 'svg');
-  svg.setAttribute('viewBox', '0 0 60 60');
-  svg.setAttribute('class', 'knob');
-  svg.setAttribute('tabindex', '0');
-  svg.setAttribute('role', 'slider');
-  svg.setAttribute('aria-label', label);
-  const arcPath = (a0, a1) => {
-    const r = 24, cx = 30, cy = 30;
-    const p = (a) => [cx + r * Math.cos(a), cy + r * Math.sin(a)];
-    const [x0, y0] = p(a0), [x1, y1] = p(a1);
-    return `M${x0} ${y0} A${r} ${r} 0 ${a1 - a0 > Math.PI ? 1 : 0} 1 ${x1} ${y1}`;
-  };
-  const A0 = Math.PI * 0.75, A1 = Math.PI * 2.25;
-  const mk = (tag, attrs) => { const n = document.createElementNS(NS, tag); for (const k in attrs) n.setAttribute(k, attrs[k]); svg.append(n); return n; };
-  mk('path', { d: arcPath(A0, A1), class: 'track', 'stroke-width': 5, fill: 'none', 'stroke-linecap': 'round' });
-  const arc = mk('path', { class: 'arc', 'stroke-width': 5, fill: 'none', 'stroke-linecap': 'round' });
-  mk('circle', { cx: 30, cy: 30, r: 17, class: 'cap', 'stroke-width': 1.5 });
-  const ptr = mk('line', { x1: 30, y1: 30, x2: 30, y2: 16, class: 'ptr', 'stroke-width': 3, 'stroke-linecap': 'round' });
-  let v = value;
-  const draw = () => {
-    const f = max > min ? (v - min) / (max - min) : 0;
-    const a = A0 + f * (A1 - A0);
-    arc.setAttribute('d', f > 0.002 ? arcPath(A0, a) : '');
-    ptr.setAttribute('x2', 30 + 13 * Math.cos(a)); ptr.setAttribute('y2', 30 + 13 * Math.sin(a));
-    svg.setAttribute('aria-valuenow', v);
-  };
-  const set = (nv) => {
-    nv = Math.max(min, Math.min(max, Math.round(nv)));
-    if (nv !== v) { v = nv; draw(); onInput(v); }
-  };
-  svg.setAttribute('aria-valuemin', min); svg.setAttribute('aria-valuemax', max);
-  let drag = null;
-  svg.addEventListener('pointerdown', (e) => {
-    svg.setPointerCapture(e.pointerId); svg.focus();
-    drag = { y: e.clientY, v }; state.activeKnob = svg;
-  });
-  svg.addEventListener('pointermove', (e) => {
-    if (!drag) return;
-    const per = (max - min) / (e.shiftKey ? 600 : 150);
-    set(drag.v + (drag.y - e.clientY) * Math.max(per, e.shiftKey ? 0.05 : 0.12));
-  });
-  const end = () => { drag = null; state.activeKnob = null; };
-  svg.addEventListener('pointerup', end); svg.addEventListener('pointercancel', end);
-  svg.addEventListener('wheel', (e) => { e.preventDefault(); set(v + (e.deltaY < 0 ? 1 : -1)); }, { passive: false });
-  svg.addEventListener('keydown', (e) => {
-    const big = Math.max(1, Math.round((max - min) / 10));
-    const map = { ArrowUp: 1, ArrowRight: 1, ArrowDown: -1, ArrowLeft: -1, PageUp: big, PageDown: -big };
-    if (e.key in map) { e.preventDefault(); set(v + map[e.key]); }
-    if (e.key === 'Home') set(min);
-    if (e.key === 'End') set(max);
-  });
-  draw();
-  svg.update = (nv) => { v = nv; draw(); };
-  return svg;
-}
-
 // ---------------------------------------------------------------- editing
 function changeParam(key, raw, { rerender = false } = {}) {
   if (!state.patch) return;
@@ -146,7 +75,7 @@ function queueSend(key) {
   if (!sendTimer) sendTimer = setTimeout(flushSend, 25);
 }
 function flushSend() {
-  sendTimer = null;
+  clearTimeout(sendTimer); sendTimer = null;
   for (const key of sendQueue) {
     const [addr, data] = state.patch.paramMessage(key);
     try { midi.dt1(addr, data); } catch (e) { toast(e.message, true); }
@@ -158,7 +87,7 @@ function flushSend() {
 // Used for values the GT-1 streams back (expression pedal, assigns, wave modulation…).
 const liveControls = new Map();
 
-function control(def, block) {
+function control(def) {
   const p = state.patch;
   const raw = p.get(def.id);
   const valEl = el('div', { class: 'val' }, labelOf(def, raw));
@@ -181,7 +110,7 @@ function control(def, block) {
     widget = el('div', { class: 'stepdd' }, k, sel);
     liveControls.set(def.id, (r) => {
       const s = stepperSplit(st, r);
-      if (state.activeKnob !== k) k.update(s.numeric ? s.number : st.min);
+      if (!isDragging(k)) k.update(s.numeric ? s.number : st.min);
       if (document.activeElement !== sel) sel.value = s.numeric ? st.stepperIndex : st.dropdown.findIndex((o) => o.val === r);
       valEl.textContent = labelOf(def, r);
     });
@@ -193,7 +122,7 @@ function control(def, block) {
     return el('div', { class: 'ctrl' }, el('div', { class: 'name' }, def.name), sel);
   } else {
     widget = knob({ value: raw, min: fromDisplay(def, def.min), max: fromDisplay(def, def.max), label: def.name, onInput: (r) => update(r) });
-    liveControls.set(def.id, (r) => { if (state.activeKnob !== widget) widget.update(r); valEl.textContent = labelOf(def, r); });
+    liveControls.set(def.id, (r) => { if (!isDragging(widget)) widget.update(r); valEl.textContent = labelOf(def, r); });
   }
   return el('div', { class: 'ctrl' }, el('div', { class: 'name' }, def.name), widget, valEl);
 }
@@ -232,7 +161,7 @@ function renderPanel() {
   panel.append(head);
 
   const defs = paramDefs(b, p).filter((d) => isEnabled(d, b, p));
-  const grid = el('div', { class: 'params' }, defs.map((d) => control(d, b)));
+  const grid = el('div', { class: 'params' }, defs.map(control));
   panel.append(defs.length ? grid : el('div', { class: 'empty' }, 'No adjustable parameters for this type.'));
 }
 
@@ -264,7 +193,7 @@ function blockTitle(b, p) {
 
 // Two views: "simple" (IN → main blocks with LEDs and icons → OUT, like BOSS TONE STUDIO)
 // and "full" (every block, including routing). Choice is remembered per browser.
-state.chainView = (() => { try { return localStorage.getItem('chainView') || 'simple'; } catch { return 'simple'; } })();
+try { state.chainView = localStorage.getItem('chainView') || 'simple'; } catch { /* storage blocked: default view */ }
 function setChainView(v) {
   state.chainView = v;
   try { localStorage.setItem('chainView', v); } catch { /* storage blocked: still works for this visit */ }
@@ -276,7 +205,7 @@ function renderChain() {
   c.replaceChildren();
   const simple = state.chainView === 'simple' && !!DEVICE.simpleChain;
   c.classList.toggle('simple', simple);
-  document.querySelectorAll('#chainView button').forEach((x) => x.setAttribute('aria-pressed', String(x.dataset.view === (simple ? 'simple' : 'full'))));
+  for (const x of $$('#chainView button')) x.setAttribute('aria-pressed', String(x.dataset.view === (simple ? 'simple' : 'full')));
   const p = state.patch;
   if (!p) return;
   const order = chainOf(p);
@@ -312,13 +241,12 @@ function renderChain() {
   // Master settings are not part of the chain order but edited the same way
   const m = blockById('master');
   if (m) {
-    const sel = state.block === 'master' ? ' sel' : '';
-    const go = () => { state.block = 'master'; render(); };
-    c.append(simple
-      ? el('div', { class: `blk master${sel}`, style: `--c:${m.color}`, title: 'Master settings', onclick: go },
-        el('span', { class: 'nm' }, 'MST'), el('span', { class: 'led none' }), el('span', { class: 'ico' }, icon('pedal')))
-      : el('div', { class: `blk master${sel}`, style: `--c:${m.color}`, title: 'Master settings', onclick: go },
-        el('span', {}, 'MST'), el('span', { class: 't' }, 'MASTER')));
+    c.append(el('div', {
+      class: `blk master${state.block === m.id ? ' sel' : ''}`, style: `--c:${m.color}`, title: 'Master settings',
+      onclick: () => { state.block = m.id; render(); },
+    }, simple
+      ? [el('span', { class: 'nm' }, m.short), el('span', { class: 'led none' }), el('span', { class: 'ico' }, icon('pedal'))]
+      : [el('span', {}, m.short), el('span', { class: 't' }, m.name)]));
   }
   if (simple) c.append(el('div', { class: 'chain-end', title: 'Output' }, el('span', {}, 'OUT'), icon('speaker')));
 }
@@ -342,6 +270,12 @@ function moveChain(from, to) {
 }
 
 // ---------------------------------------------------------------- library
+function setTab(tab) {
+  state.tab = tab;
+  for (const t of $$('.tab')) t.classList.toggle('active', t.dataset.tab === tab);
+  renderLibrary();
+}
+
 function renderLibrary() {
   const list = $('#libList');
   list.replaceChildren();
@@ -350,12 +284,15 @@ function renderLibrary() {
   let hint = '';
   if (state.tab === 'user') {
     items = state.userNames.map((name, i) => ({ no: DEVICE.memory.userLabel(i), name, i }));
-    if (!state.connected) hint = `Connect the ${DEVICE.name} to see its user memories.`;
+    if (!state.connected) {
+      hint = RolandMidi.supported() || state.demoOnly ? `Connect the ${DEVICE.name} to see its user memories.`
+        : 'Web MIDI is not available in this browser — use Chrome or Edge to connect.';
+    }
     else if (!items.length) hint = 'Reading patch names…';
   } else if (state.tab === 'factory') {
     items = state.factory.map((p, i) => ({ no: DEVICE.memory.presetLabel(i), name: p.name, cat: p.category, i }));
   } else {
-    items = state.file.map((p, i) => ({ no: String(i + 1).padStart(2, '0'), name: p.name, cat: p.category, i }));
+    items = state.file.map((p, i) => ({ no: pad2(i + 1), name: p.name, cat: p.category, i }));
     hint = state.file.length ? state.fileName : 'Use “Import .tsl” to open a liveset file.';
   }
   $('#libHint').textContent = hint;
@@ -378,8 +315,7 @@ async function pickPatch(kind, i) {
       const patch = Patch.fromTsl(src.params);
       if (state.patch?.image) for (const [k, v] of state.patch.image) if (!patch.image.has(k)) patch.image.set(k, v);
       state.patch = patch;
-      const no = String(i + 1).padStart(2, '0');
-      state.source = { kind, index: i, label: kind === 'factory' ? (state.demoOnly ? `Sample ${no}` : `Factory ${DEVICE.memory.presetLabel(i)}`) : `File #${i + 1}` };
+      state.source = kind === 'factory' ? factorySource(i) : { kind, index: i, label: `File #${i + 1}` };
       render();
       if (state.connected) await sendWholePatch();
       toast(state.connected ? `Loaded “${patch.name}” into the ${DEVICE.name} (not stored yet)` : `Loaded “${patch.name}”`);
@@ -388,26 +324,18 @@ async function pickPatch(kind, i) {
 }
 
 // ---------------------------------------------------------------- device
-async function readTemp() {
-  const image = new Map();
-  const { temp, readBlocks, readSize } = DEVICE.memory;
-  for (const [b2, b3] of readBlocks) {
-    const got = await midi.rq1([...temp, b2, b3], readSize);
-    got.forEach((v, a) => image.set(a - tempStart(), v));
-  }
-  return Patch.fromImage(image);
-}
-
-async function readUserPatchDirect(n) {
-  const { user, readBlocks, readSize } = DEVICE.memory;
-  const base = addrToInt([...user(n), 0, 0]);
+// Read a whole patch from the unit; base2 = first two address bytes (edit buffer or a memory).
+async function readPatch(base2) {
+  const { readBlocks, readSize } = DEVICE.memory;
+  const base = addrToInt([...base2, 0, 0]);
   const image = new Map();
   for (const [b2, b3] of readBlocks) {
-    const got = await midi.rq1([...user(n), b2, b3], readSize);
+    const got = await midi.rq1([...base2, b2, b3], readSize);
     got.forEach((v, a) => image.set(a - base, v));
   }
   return Patch.fromImage(image);
 }
+const readTemp = () => readPatch(DEVICE.memory.temp);
 
 async function sendWholePatch() {
   for (const [addr, data] of state.patch.chunks()) { midi.dt1(addr, data); await sleep(15); }
@@ -421,7 +349,7 @@ async function selectUserPatch(n) {
   const my = ++loadSeq;
   setConn('busy', 'Loading…');
   state.pendingSelect = n; // so the unit's echo of this change is not treated as a panel change
-  midi.dt1(DEVICE.memory.currentPatch, [(n >> 7) & 127, n & 127]);
+  midi.dt1(DEVICE.memory.currentPatch, to14(n));
   await sleep(250);
   if (my !== loadSeq) return;
   let patch = await readTemp();
@@ -429,7 +357,7 @@ async function selectUserPatch(n) {
   const expected = (state.userNames[n] || '').trim();
   if (expected && patch.name.trim() !== expected) {
     // The unit did not switch: read the memory directly and put it in the edit buffer.
-    patch = await readUserPatchDirect(n);
+    patch = await readPatch(DEVICE.memory.user(n));
     if (my !== loadSeq) return;
     state.patch = patch;
     await sendWholePatch();
@@ -491,11 +419,7 @@ async function connect() {
   }
   try {
     setConn('busy', 'Connecting…');
-    if (!midi.access && !state.demo) {
-      await midi.init();
-      midi.addEventListener('ports', fillPortSelects);
-      midi.addEventListener('dt1', onDeviceData);
-    }
+    if (!midi.access && !state.demo) await midi.init();
     if (!midi.output) {
       const g = midi.guessPorts();
       if (!g.input || !g.output) {
@@ -513,9 +437,7 @@ async function connect() {
     const no = await midi.rq1(DEVICE.memory.currentPatch, 2, 1500).catch(() => null);
     state.patch = await readTemp();
     state.connected = true;
-    let cur = null;
-    if (no) { const v = [...no.values()]; cur = v[0] * 128 + (v[1] || 0); }
-    state.source = sourceForNumber(cur);
+    state.source = sourceForNumber(no ? from14(...no.values()) : null);
     setConn('on', connLabel());
     render();
     toast(state.demo ? `Demo mode: a simulated ${DEVICE.name} with ${DEVICE.memory.userCount} random patches. Nothing is sent to real hardware.` : `Connected to ${midi.output.name}`);
@@ -527,6 +449,19 @@ async function connect() {
   }
 }
 
+// MIDI ports appeared or went away. If ours is gone (cable pulled, unit switched off), say so
+// instead of staying "Connected" and sending into nothing.
+function onPortsChanged() {
+  fillPortSelects();
+  if (!state.connected || state.demo) return;
+  if (midi.output?.state !== 'disconnected' && midi.input?.state !== 'disconnected') return;
+  state.connected = false;
+  midi.select(null, null);
+  setConn('off', 'Disconnected');
+  renderLibrary();
+  toast(`${DEVICE.name} disconnected. Plug it back in and click Connect.`, true);
+}
+
 // The unit tells us about changes made on its own panel.
 let resyncTimer;
 function onDeviceData(e) {
@@ -534,7 +469,7 @@ function onDeviceData(e) {
   if (start === addrToInt(DEVICE.memory.currentPatch)) {
     // The unit announces every patch change, including the ones this editor asked for.
     const hi = bytes.get(start);
-    const n = hi === undefined ? null : hi * 128 + (bytes.get(start + 1) ?? 0);
+    const n = hi === undefined ? null : from14(hi, bytes.get(start + 1));
     if (n !== null && n === state.pendingSelect) return; // echo of our own selection
     clearTimeout(resyncTimer);
     resyncTimer = setTimeout(async () => {
@@ -580,7 +515,7 @@ function scheduleRedraw() {
   if (redrawTimer) return;
   redrawTimer = setTimeout(() => {
     redrawTimer = null;
-    if (state.activeKnob) { scheduleRedraw(); return; } // never pull a knob out from under the mouse
+    if (anyKnobDragging()) { scheduleRedraw(); return; } // never pull a knob out from under the mouse
     $('#patchName').value = state.patch.name;
     renderChain();
     renderPanel();
@@ -599,7 +534,7 @@ function fillPortSelects() {
 }
 async function openSettings() {
   if (RolandMidi.supported() && !midi.access) {
-    try { await midi.init(); midi.addEventListener('ports', fillPortSelects); midi.addEventListener('dt1', onDeviceData); } catch (e) { toast(e.message, true); }
+    try { await midi.init(); } catch (e) { toast(e.message, true); }
   }
   fillPortSelects();
   $('#settingsDlg').showModal();
@@ -607,8 +542,10 @@ async function openSettings() {
 
 // ---------------------------------------------------------------- files
 function download(name, text) {
-  const a = el('a', { href: URL.createObjectURL(new Blob([text], { type: 'application/json' })), download: name });
+  const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+  const a = el('a', { href: url, download: name });
   document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function importTsl(file) {
@@ -620,9 +557,7 @@ function importTsl(file) {
       if (j.device && j.device !== DEVICE.tslDevice) toast(`This file is for ${j.device}; loading anyway`, true);
       state.file = j.patchList.filter((p) => p.params).map((p) => ({ name: p.name || nameFromParams(p.params), category: p.category || '', params: p.params }));
       state.fileName = file.name;
-      state.tab = 'file';
-      document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === 'file'));
-      renderLibrary();
+      setTab('file');
       toast(`${state.file.length} patches in ${file.name}`);
     } catch (e) { toast(e.message, true); }
   };
@@ -640,89 +575,7 @@ function render() {
   renderLibrary();
 }
 
-// ---------------------------------------------------------------- Roland data setup
-// Folders dropped onto the page: walk them, keeping only files we might need.
-async function filesFromDrop(dt) {
-  const out = [];
-  const wanted = (n) => /\.(zip|exe|swf|tsl)$/i.test(n);
-  const walk = (entry) => new Promise((resolve) => {
-    if (entry.isFile) {
-      if (!wanted(entry.name)) return resolve();
-      entry.file((f) => { out.push(f); resolve(); }, () => resolve());
-    } else if (entry.isDirectory) {
-      const reader = entry.createReader();
-      const all = [];
-      const next = () => reader.readEntries(async (batch) => {
-        if (!batch.length) { for (const e of all) await walk(e); resolve(); } else { all.push(...batch); next(); }
-      }, () => resolve());
-      next();
-    } else resolve();
-  });
-  const entries = [...dt.items].map((i) => i.webkitGetAsEntry && i.webkitGetAsEntry()).filter(Boolean);
-  if (entries.length) for (const e of entries) await walk(e);
-  else out.push(...[...dt.files].filter((f) => wanted(f.name)));
-  return out;
-}
-
-function runSetup({ cancelable = false } = {}) {
-  return new Promise((resolve) => {
-    const dlg = $('#setupDlg');
-    const status = $('#setupStatus');
-    const say = (msg, err = false) => { status.textContent = msg; status.className = 'setup-status' + (err ? ' err' : ''); };
-    say('');
-    let busy = false;
-    const process = async (files) => {
-      if (busy || !files.length) return;
-      busy = true;
-      try {
-        say('Looking for BOSS TONE STUDIO data…');
-        const found = await findRolandFiles(files, say);
-        if (!found.device) {
-          const supported = DEVICES.map((d) => d.name).join(', ');
-          throw new Error(`Could not find a supported BOSS TONE STUDIO in what you picked (supported: ${supported}). Try the BOSS download zip or the installed folder.`);
-        }
-        say(`Reading the ${found.device.name} parameter list…`);
-        const defs = await buildDefsFromSwf(found.swf, found.device);
-        setDevice(found.device.id);
-        const factory = found.tsl ? parsePresets(found.tsl) : [];
-        const saved = (await store.set('defs', defs)) && (await store.set('factory', factory));
-        say(`Done: ${found.device.name}, ${Object.keys(defs.addr).length} parameters, ${factory.length} factory presets.` + (saved ? '' : ' (Could not save in this browser; you will need to do this again next time.)'));
-        cleanup();
-        dlg.close();
-        resolve({ defs, factory });
-      } catch (e) {
-        console.error(e);
-        say(e.message || String(e), true);
-      } finally { busy = false; }
-    };
-    const onFiles = (e) => { process([...e.target.files]); e.target.value = ''; };
-    const zone = $('#dropZone');
-    const onOver = (e) => { e.preventDefault(); zone.classList.add('over'); };
-    const onLeave = () => zone.classList.remove('over');
-    const onDrop = async (e) => { e.preventDefault(); zone.classList.remove('over'); process(await filesFromDrop(e.dataTransfer)); };
-    const onCancel = (e) => { if (!cancelable) e.preventDefault(); };
-    const pickFile = () => $('#setupFiles').click();
-    const pickFolder = () => $('#setupFolder').click();
-    const tryDemo = () => { cleanup(); dlg.close(); resolve({ demo: true }); };
-    const cleanup = () => {
-      $('#setupFiles').removeEventListener('change', onFiles); $('#setupFolder').removeEventListener('change', onFiles);
-      zone.removeEventListener('dragover', onOver); zone.removeEventListener('dragleave', onLeave); zone.removeEventListener('drop', onDrop);
-      dlg.removeEventListener('cancel', onCancel);
-      $('#btnPickFile').removeEventListener('click', pickFile); $('#btnPickFolder').removeEventListener('click', pickFolder);
-      $('#btnSetupDemo').removeEventListener('click', tryDemo);
-    };
-    $('#setupFiles').addEventListener('change', onFiles); $('#setupFolder').addEventListener('change', onFiles);
-    zone.addEventListener('dragover', onOver); zone.addEventListener('dragleave', onLeave); zone.addEventListener('drop', onDrop);
-    dlg.addEventListener('cancel', onCancel);
-    $('#btnPickFile').addEventListener('click', pickFile); $('#btnPickFolder').addEventListener('click', pickFolder);
-    // Offered only on first run; from inside the demo the dialog is opened to import for real.
-    $('#btnSetupDemo').hidden = cancelable;
-    $('#btnSetupDemo').addEventListener('click', tryDemo);
-    dlg.addEventListener('close', cleanup, { once: true }); // also when dismissed with Esc
-    dlg.showModal();
-  });
-}
-
+// ---------------------------------------------------------------- Roland data
 async function loadRolandData() {
   let defs = await store.get('defs');
   let factory = await store.get('factory');
@@ -759,12 +612,12 @@ function enterDemoOnly() {
   state.factory = scratchPresets(30, demo.paramDefs(), demo.switches, demo.typeKeys, typeLists);
   document.body.classList.add('demo-only');
   $('#demoBanner').hidden = false;
-  document.querySelector('.tab[data-tab=factory]').textContent = 'Samples';
+  $('.tab[data-tab=factory]').textContent = 'Samples';
 }
 
+// Reloading is the simple way to swap the demo's made-up table for the imported one.
 async function importForReal() {
-  await runSetup({ cancelable: true });
-  location.reload();
+  if (await runSetup({ cancelable: true })) location.reload();
 }
 
 function blockedInDemo() {
@@ -779,17 +632,15 @@ async function main() {
   window.__appStarted = true; // checked by the load guard in index.html
   await loadRolandData();
   // labels that name the device
-  document.querySelector('.tab[data-tab=user]').textContent = `${DEVICE.name} User`;
-  document.querySelectorAll('#chainView button').forEach((x) => x.addEventListener('click', () => setChainView(x.dataset.view)));
+  $('.tab[data-tab=user]').textContent = `${DEVICE.name} User`;
+  for (const x of $$('#chainView button')) x.addEventListener('click', () => setChainView(x.dataset.view));
   if (!DEVICE.simpleChain) $('#chainView').hidden = true;
   $('#btnReimport').addEventListener('click', importForReal);
   $('#btnDemoImport').addEventListener('click', importForReal);
 
-  document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => {
-    state.tab = t.dataset.tab;
-    document.querySelectorAll('.tab').forEach((x) => x.classList.toggle('active', x === t));
-    renderLibrary();
-  }));
+  for (const t of $$('.tab')) t.addEventListener('click', () => setTab(t.dataset.tab));
+  midi.addEventListener('ports', onPortsChanged);
+  midi.addEventListener('dt1', onDeviceData);
   $('#libFilter').addEventListener('input', renderLibrary);
   $('#btnConnect').addEventListener('click', () => { if (blockedInDemo()) return; leaveDemo(); connect(); });
   $('#btnDemo').addEventListener('click', startDemo);
@@ -830,7 +681,7 @@ async function main() {
     const n = +$('#writeSlot').value;
     try {
       flushSend();
-      midi.dt1(DEVICE.commands.patchWrite, [(n >> 7) & 127, n & 127]);
+      midi.dt1(DEVICE.commands.patchWrite, to14(n));
       state.userNames[n] = state.patch.name;
       state.source = userSource(n);
       render();
@@ -843,12 +694,10 @@ async function main() {
   // Start with a factory sound so the editor is usable offline.
   if (state.factory.length) {
     state.patch = Patch.fromTsl(state.factory[0].params);
-    state.source = { kind: 'factory', index: 0, label: state.demoOnly ? 'Sample 01' : `Factory ${DEVICE.memory.presetLabel(0)}` };
+    state.source = factorySource(0);
   }
-  if (!RolandMidi.supported() && !state.demoOnly) $('#libHint').textContent = 'Web MIDI is not available in this browser — use Chrome or Edge to connect.';
-  state.tab = 'factory';
-  document.querySelectorAll('.tab').forEach((x) => x.classList.toggle('active', x.dataset.tab === 'factory'));
   setConn('off', 'Offline');
+  setTab('factory');
   render();
   if (state.demoOnly) startDemo();
 }

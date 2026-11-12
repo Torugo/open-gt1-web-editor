@@ -2,10 +2,10 @@
 // hardware. Its user memories are random variations of the factory presets, generated on the fly
 // from the data the user imported (nothing from Roland is stored in this project).
 // Device-neutral: memory map, commands and demo settings come from the active profile.
-import { addrToInt, intToAddr, checksum } from './midi.js';
+import { addrToInt, intToAddr, checksum, from14 } from './midi.js';
 import { Patch } from './model.js';
 import { typeList, paramDefs, dropdownFor, stepperFor, fromDisplay } from './blocks.js';
-import { DEVICE } from './device.js';
+import { DEVICE, pad2 } from './device.js';
 
 const ADJ = ['WARM', 'FAT', 'DARK', 'BRIGHT', 'WILD', 'SMOOTH', 'ANGRY', 'DREAMY', 'VINTAGE', 'MODERN', 'GLASSY', 'FUZZY', 'SPACEY', 'TIGHT', 'HOT', 'COSMIC', 'DUSTY', 'ROYAL', 'NEON', 'LOW'];
 const NOUN = ['LEAD', 'CRUNCH', 'CLEAN', 'RIFF', 'SOLO', 'STACK', 'DRIVE', 'WALL', 'ECHO', 'SWIRL', 'BLUES', 'METAL', 'FUNK', 'DRONE', 'TWANG', 'ROAR', 'HAZE', 'SHIMMER', 'JET', 'CHUG'];
@@ -16,7 +16,7 @@ const randInt = (lo, hi) => lo + Math.floor(Math.random() * (hi - lo + 1));
 function demoName(i) {
   for (;;) {
     const n = `${pick(ADJ)} ${pick(NOUN)}`;
-    if (n.length <= 13) return `${n} ${String(i + 1).padStart(2, '0')}`.slice(0, 16);
+    if (n.length <= 13) return `${n} ${pad2(i + 1)}`.slice(0, 16);
   }
 }
 
@@ -54,8 +54,7 @@ export function scratchPresets(count, paramDefs, switches, typeKeys, typeLists) 
   for (let i = 0; i < count; i++) {
     const params = {};
     for (const d of Object.values(paramDefs)) {
-      const base = d.min < 0 ? d.min : 0;
-      const lo = Math.round((d.min - base) / d.step); const hi = Math.round((d.max - base) / d.step);
+      const lo = fromDisplay(d, d.min); const hi = fromDisplay(d, d.max);
       params[d.id] = hi - lo <= 4 ? randInt(lo, hi) : centred(lo, hi);
     }
     switches.forEach((k) => { params[k] = Math.random() < (DEVICE.demo.onChance[k] ?? 0.4) ? 1 : 0; });
@@ -102,7 +101,7 @@ export function createVirtualDevice(factory) {
       if (d[cmdAt] === 0x12) {
         const data = d.slice(cmdAt + 5, d.length - 2);
         data.forEach((b, i) => mem.set(addr + i, b));
-        const n = data[0] * 128 + (data[1] ?? 0);
+        const n = from14(data[0], data[1]);
         if (addr === patchNo) copy(memory.user(n), TEMP); // select patch
         if (addr === addrToInt(commands.patchWrite)) copy(TEMP, memory.user(n)); // write patch
       } else if (d[cmdAt] === 0x11) {
