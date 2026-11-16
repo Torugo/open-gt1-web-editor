@@ -29,6 +29,13 @@ No GT-1 at hand? **Try the demo first** on the setup screen runs the editor agai
 
 Not rebuilt yet: system settings, tuner, CTL/EXP assign editor, copy/move between memories.
 Tested on a real GT-1 with Chrome on Windows. Firefox and Safari lack the Web MIDI support it needs.
+Also tested on Ubuntu 26.04.1 LTS (kernel 7.0.0-43) with Chrome 157.0.8103.78.
+The GT-1 is detected as a class-compliant USB MIDI device (ALSA), with no
+Roland driver installed. BOSS TONE STUDIO was used only as the source zip,
+not run. Verified: connecting to the GT-1, writing and effect chain.
+
+Firefox 154.0 (snap) did not work in this test: the page shows "WebMIDI
+requires a site permission add-on to activate" and the GT-1 is not connected.
 
 ## Run it yourself
 
